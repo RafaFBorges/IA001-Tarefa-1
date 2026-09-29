@@ -1,5 +1,5 @@
-# filepath: /home/rafa/Área de Trabalho/WORK/IA001.1/app.py
 from pathlib import Path
+from datetime import date
 
 import pandas as pd
 import streamlit as st
@@ -9,6 +9,13 @@ from streamlit_folium import st_folium
 
 BASE = Path(__file__).parent
 DADOS = BASE / "dados"
+ANO_ATUAL = date.today().year
+
+st.set_page_config(
+    page_title="Acidentes de trânsito em Porto Alegre",
+    page_icon="🚦",
+    layout="wide"
+)
 
 @st.cache_data
 def carregar_dados():
@@ -25,9 +32,24 @@ def carregar_dados():
         errors="coerce"
     )
 
+    # Impede datas futuras e anos posteriores ao ano atual.
+    hoje = pd.Timestamp.today().normalize()
+
+    acidentes = acidentes[
+        acidentes["data"].isna()
+        | (
+            (acidentes["data"] <= hoje)
+            & (acidentes["data"].dt.year <= ANO_ATUAL)
+        )
+    ].copy()
+
     for coluna in [
-        "latitude", "longitude", "feridos",
-        "feridos_gr", "mortes", "fatais"
+        "latitude",
+        "longitude",
+        "feridos",
+        "feridos_gr",
+        "mortes",
+        "fatais"
     ]:
         if coluna in acidentes.columns:
             acidentes[coluna] = pd.to_numeric(
@@ -38,19 +60,14 @@ def carregar_dados():
             )
 
     acidentes["ano"] = acidentes["data"].dt.year
+
     acidentes["acidente_grave"] = (
-        acidentes.get("feridos_gr", 0).fillna(0).gt(0)
-        | acidentes.get("mortes", 0).fillna(0).gt(0)
+        acidentes["feridos_gr"].fillna(0).gt(0)
+        | acidentes["mortes"].fillna(0).gt(0)
     )
 
     return acidentes
 
-
-st.set_page_config(
-    page_title="Acidentes de trânsito em Porto Alegre",
-    page_icon="🚦",
-    layout="wide"
-)
 
 st.title("🚦 Acidentes de trânsito em Porto Alegre")
 st.caption("Análise exploratória dos dados abertos da EPTC")
@@ -63,10 +80,21 @@ except Exception as erro:
 
 st.sidebar.header("Filtros")
 
-anos = sorted(df["ano"].dropna().astype(int).unique())
+anos = sorted(
+    df["ano"]
+    .dropna()
+    .astype(int)
+    .loc[lambda serie: serie <= ANO_ATUAL]
+    .unique()
+)
+
+if not anos:
+    st.warning("Não há anos válidos disponíveis para exibição.")
+    st.stop()
+
 anos_selecionados = st.sidebar.multiselect(
     "Ano",
-    anos,
+    options=anos,
     default=anos
 )
 
@@ -74,22 +102,32 @@ apenas_graves = st.sidebar.checkbox(
     "Mostrar somente acidentes graves"
 )
 
-filtrado = df[df["ano"].isin(anos_selecionados)].copy()
+filtrado = df[
+    df["ano"].isin(anos_selecionados)
+].copy()
 
 if apenas_graves:
-    filtrado = filtrado[filtrado["acidente_grave"]]
+    filtrado = filtrado[
+        filtrado["acidente_grave"]
+    ]
 
 col1, col2, col3, col4 = st.columns(4)
 
-col1.metric("Acidentes", f"{len(filtrado):,}".replace(",", "."))
+col1.metric(
+    "Acidentes",
+    f"{len(filtrado):,}".replace(",", ".")
+)
+
 col2.metric(
     "Acidentes graves",
     f"{filtrado['acidente_grave'].sum():,}".replace(",", ".")
 )
+
 col3.metric(
     "Feridos",
     f"{filtrado['feridos'].sum():,.0f}".replace(",", ".")
 )
+
 col4.metric(
     "Mortes",
     f"{filtrado['mortes'].sum():,.0f}".replace(",", ".")
