@@ -1,15 +1,14 @@
 from pathlib import Path
-from datetime import date
-
 import pandas as pd
 import streamlit as st
 import folium
 from folium.plugins import HeatMap
 from streamlit_folium import st_folium
 
+from pipeline_dados import preparar_acidentes
+
 BASE = Path(__file__).parent
 DADOS = BASE / "dados"
-ANO_ATUAL = date.today().year
 
 st.set_page_config(
     page_title="Acidentes de trânsito em Porto Alegre",
@@ -19,54 +18,12 @@ st.set_page_config(
 
 @st.cache_data
 def carregar_dados():
-    acidentes = pd.read_csv(
+    brutos = pd.read_csv(
         DADOS / "cat_acidentes.csv",
         sep=";",
-        encoding="utf-8"
+        encoding="utf-8",
     )
-
-    acidentes.columns = acidentes.columns.str.strip().str.lower()
-
-    acidentes["data"] = pd.to_datetime(
-        acidentes["data"],
-        errors="coerce"
-    )
-
-    # Impede datas futuras e anos posteriores ao ano atual.
-    hoje = pd.Timestamp.today().normalize()
-
-    acidentes = acidentes[
-        acidentes["data"].isna()
-        | (
-            (acidentes["data"] <= hoje)
-            & (acidentes["data"].dt.year <= ANO_ATUAL)
-        )
-    ].copy()
-
-    for coluna in [
-        "latitude",
-        "longitude",
-        "feridos",
-        "feridos_gr",
-        "mortes",
-        "fatais"
-    ]:
-        if coluna in acidentes.columns:
-            acidentes[coluna] = pd.to_numeric(
-                acidentes[coluna]
-                .astype(str)
-                .str.replace(",", ".", regex=False),
-                errors="coerce"
-            )
-
-    acidentes["ano"] = acidentes["data"].dt.year
-
-    acidentes["acidente_grave"] = (
-        acidentes["feridos_gr"].fillna(0).gt(0)
-        | acidentes["mortes"].fillna(0).gt(0)
-    )
-
-    return acidentes
+    return preparar_acidentes(brutos)
 
 
 st.title("🚦 Acidentes de trânsito em Porto Alegre")
@@ -84,7 +41,6 @@ anos = sorted(
     df["ano"]
     .dropna()
     .astype(int)
-    .loc[lambda serie: serie <= ANO_ATUAL]
     .unique()
 )
 
