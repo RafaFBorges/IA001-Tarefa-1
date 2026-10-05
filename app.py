@@ -148,8 +148,8 @@ def renderizar_analise(conjuntos):
         f"Dados até {DATA_EXTRACAO.strftime('%d/%m/%Y')}, então o último ano é parcial."
     )
 
-    aba_temporal, aba_categorias, aba_distribuicao, aba_espacial = st.tabs(
-        ["Temporal", "Categorias", "Distribuição", "Espacial"]
+    aba_temporal, aba_categorias, aba_distribuicao = st.tabs(
+        ["Temporal", "Categorias", "Distribuição"]
     )
 
     with aba_temporal:
@@ -246,25 +246,6 @@ def renderizar_analise(conjuntos):
             mostrar_grafico(
                 graficos.grafico_distribuicao(serie, rotulo)
             )
-
-    with aba_espacial:
-        nome = selecionar_base(conjuntos, "base_espacial")
-        grafico, total, exibidos = graficos.grafico_espacial(
-            conjuntos[nome],
-            coluna_gravidade="acidente_grave" if nome == "Acidentes" else None,
-        )
-        if exibidos < total:
-            st.caption(
-                f"Exibindo uma amostra de {graficos.formatar_inteiro(exibidos)} "
-                f"de {graficos.formatar_inteiro(total)} registros com coordenadas "
-                "válidas em Porto Alegre."
-            )
-        else:
-            st.caption(
-                f"{graficos.formatar_inteiro(total)} registros com coordenadas "
-                "válidas em Porto Alegre."
-            )
-        mostrar_grafico(grafico)
 
 
 aba_visao, aba_analise = st.tabs(["Visão geral", "Análise de dados"])

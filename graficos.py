@@ -14,9 +14,6 @@ ORDEM_DIAS = [
     "domingo",
 ]
 
-LIMITES_LATITUDE = (-30.30, -29.90)
-LIMITES_LONGITUDE = (-51.30, -51.00)
-
 NOMES_MESES = [
     "Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
     "Jul", "Ago", "Set", "Out", "Nov", "Dez",
@@ -581,73 +578,3 @@ def grafico_distribuicao(serie, rotulo_x, cor=COR_NEUTRA):
         grafico_histograma(serie, rotulo_x, cor),
         grafico_boxplot(serie, rotulo_x),
     ).resolve_scale(x="shared")
-
-
-def grafico_espacial(df, coluna_gravidade=None, limite_pontos=10000):
-    dados = df.dropna(subset=["latitude", "longitude"])
-    dados = dados[
-        dados["latitude"].between(*LIMITES_LATITUDE)
-        & dados["longitude"].between(*LIMITES_LONGITUDE)
-    ]
-    total = len(dados)
-
-    if total > limite_pontos:
-        dados = dados.sample(limite_pontos, random_state=0)
-
-    colunas = ["latitude", "longitude"]
-    if coluna_gravidade is not None:
-        colunas.append(coluna_gravidade)
-    dados = dados[colunas].copy()
-
-    codificacao = {
-        "x": alt.X(
-            "longitude:Q",
-            title="Longitude",
-            scale=alt.Scale(domain=list(LIMITES_LONGITUDE), zero=False),
-        ),
-        "y": alt.Y(
-            "latitude:Q",
-            title="Latitude",
-            scale=alt.Scale(domain=list(LIMITES_LATITUDE), zero=False),
-        ),
-        "tooltip": [
-            alt.Tooltip("latitude:Q", format=".5f"),
-            alt.Tooltip("longitude:Q", format=".5f"),
-        ],
-    }
-
-    if coluna_gravidade is None:
-        grafico = (
-            alt.Chart(dados)
-            .mark_circle(size=25)
-            .encode(
-                color=alt.value("#756bb1"),
-                opacity=alt.value(0.5),
-                **codificacao,
-            )
-        )
-    else:
-        dados["situacao"] = dados[coluna_gravidade].map({
-            True: "Grave",
-            False: "Não grave",
-        })
-        selecao = alt.selection_point(fields=["situacao"], bind="legend")
-        grafico = (
-            alt.Chart(dados)
-            .mark_circle(size=25)
-            .encode(
-                color=alt.Color(
-                    "situacao:N",
-                    scale=alt.Scale(
-                        domain=["Não grave", "Grave"],
-                        range=["#74add1", "#d73027"],
-                    ),
-                    legend=alt.Legend(title="Acidente"),
-                ),
-                opacity=alt.when(selecao).then(alt.value(0.6)).otherwise(alt.value(0.05)),
-                **codificacao,
-            )
-            .add_params(selecao)
-        )
-
-    return grafico.properties(height=600).interactive(), total, len(dados)
