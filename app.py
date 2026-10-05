@@ -150,22 +150,7 @@ def renderizar_analise(conjuntos):
         f"Dados até {DATA_EXTRACAO.strftime('%d/%m/%Y')}, então o último ano é parcial."
     )
 
-    aba_temporal, aba_categorias, aba_distribuicao = st.tabs(
-        ["Temporal", "Categorias", "Distribuição"]
-    )
-
-    with aba_temporal:
-        mostrar_grafico(graficos.grafico_heatmap_dia_hora(acidentes))
-
-        esquerda, direita = st.columns(2)
-
-        with esquerda:
-            mostrar_grafico(graficos.grafico_barras_mes(acidentes))
-
-        with direita:
-            mostrar_grafico(
-                graficos.grafico_dias_uteis_fim_de_semana(acidentes)
-            )
+    aba_categorias, aba_distribuicao = st.tabs(["Categorias", "Distribuição"])
 
     with aba_categorias:
         nome = selecionar_base(conjuntos, "base_categorias")
@@ -312,6 +297,19 @@ with aba_visao:
                 mostrar_titulo=False,
             )
         )
+
+    if not filtrado.empty:
+        mostrar_grafico(graficos.grafico_heatmap_dia_hora(filtrado))
+
+        esquerda, direita = st.columns(2)
+
+        with esquerda:
+            mostrar_grafico(graficos.grafico_barras_mes(filtrado))
+
+        with direita:
+            mostrar_grafico(
+                graficos.grafico_dias_uteis_fim_de_semana(filtrado)
+            )
 
 with aba_analise:
     vitimas = bases["vitimas"]
