@@ -155,28 +155,6 @@ def renderizar_analise(conjuntos):
     )
 
     with aba_temporal:
-        esquerda, direita = st.columns(2)
-
-        with esquerda:
-            mostrar_grafico(
-                graficos.grafico_linha_por_ano(
-                    acidentes.groupby("ano").size(),
-                    "Quantidade de acidentes por ano",
-                    "Quantidade de acidentes",
-                    "#d95f02",
-                )
-            )
-
-        with direita:
-            mostrar_grafico(
-                graficos.grafico_linha_por_ano(
-                    acidentes.groupby("ano")["fatais"].sum(),
-                    "Quantidade de vítimas fatais por ano",
-                    "Quantidade de vítimas fatais",
-                    "#e7298a",
-                )
-            )
-
         mostrar_grafico(graficos.grafico_heatmap_dia_hora(acidentes))
 
         esquerda, direita = st.columns(2)
