@@ -8,6 +8,8 @@ import graficos
 from pipeline_dados import DATA_EXTRACAO, preparar_bases
 
 BASE = Path(__file__).parent
+CENTRO_MAPA = [-30.0346, -51.2177]
+ZOOM_MAPA = 12
 
 st.set_page_config(
     page_title="Acidentes de trânsito em Porto Alegre",
@@ -308,7 +310,22 @@ with aba_visao:
 
             st.bar_chart(por_tipo)
 
-    st.subheader("Mapa de calor dos acidentes")
+    titulo_mapa, botao_mapa = st.columns([6, 1], vertical_alignment="center")
+    titulo_mapa.subheader("Mapa de calor dos acidentes")
+
+    if "cliques_centralizar" not in st.session_state:
+        st.session_state["cliques_centralizar"] = 0
+
+    if botao_mapa.button("Centralizar mapa", width="stretch"):
+        st.session_state["cliques_centralizar"] += 1
+
+    # O componente só reposiciona o mapa quando center/zoom diferem do último
+    # valor enviado. Por isso cada clique alterna uma diferença imperceptível
+    # (cerca de 10 cm e 0,001 de zoom, que o Leaflet arredonda): o mapa volta
+    # à posição inicial sem ser recriado.
+    alternar = st.session_state["cliques_centralizar"] % 2
+    centro_enviado = [CENTRO_MAPA[0] + alternar * 1e-6, CENTRO_MAPA[1]]
+    zoom_enviado = ZOOM_MAPA + alternar * 0.001
 
     mapa_dados = filtrado.dropna(
         subset=["latitude", "longitude"]
@@ -320,8 +337,8 @@ with aba_visao:
     ]
 
     mapa = folium.Map(
-        location=[-30.0346, -51.2177],
-        zoom_start=12,
+        location=CENTRO_MAPA,
+        zoom_start=ZOOM_MAPA,
         tiles="OpenStreetMap"
     )
 
@@ -333,7 +350,15 @@ with aba_visao:
             min_opacity=0.4
         ).add_to(mapa)
 
-    st_folium(mapa, width=None, height=600)
+    st_folium(
+        mapa,
+        width=None,
+        height=600,
+        key="mapa_calor",
+        center=centro_enviado,
+        zoom=zoom_enviado,
+        returned_objects=[],
+    )
 
     st.subheader("Dados filtrados")
     st.dataframe(filtrado, width="stretch")
