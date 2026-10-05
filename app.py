@@ -285,26 +285,50 @@ with aba_visao:
     with esquerda:
         st.subheader("Acidentes por ano")
 
-        por_ano = (
-            filtrado.groupby("ano")
-            .size()
-            .rename("Quantidade")
-        )
+        por_ano = filtrado.groupby("ano").size()
 
-        st.bar_chart(por_ano)
-
-    with direita:
-        st.subheader("Acidentes por tipo")
-
-        if "tipo_acid" in filtrado.columns:
-            por_tipo = (
-                filtrado["tipo_acid"]
-                .fillna("Não informado")
-                .value_counts()
-                .head(10)
+        if por_ano.empty:
+            st.info("Nenhum acidente para os filtros selecionados.")
+        else:
+            mostrar_grafico(
+                graficos.grafico_linha_por_ano(
+                    por_ano,
+                    None,
+                    "Quantidade de acidentes",
+                    "#d95f02",
+                )
             )
 
-            st.bar_chart(por_tipo)
+    with direita:
+        st.subheader("Vítimas fatais por ano")
+
+        fatais_por_ano = filtrado.groupby("ano")["fatais"].sum()
+
+        if fatais_por_ano.empty:
+            st.info("Nenhum acidente para os filtros selecionados.")
+        else:
+            mostrar_grafico(
+                graficos.grafico_linha_por_ano(
+                    fatais_por_ano,
+                    None,
+                    "Quantidade de vítimas fatais",
+                    "#e7298a",
+                )
+            )
+
+    st.subheader("Acidentes por tipo")
+
+    if filtrado.empty:
+        st.info("Nenhum acidente para os filtros selecionados.")
+    elif "tipo_acid" in filtrado.columns:
+        mostrar_grafico(
+            graficos.grafico_frequencia(
+                filtrado,
+                "tipo_acid",
+                cor_texto=cor_do_texto(),
+                mostrar_titulo=False,
+            )
+        )
 
     titulo_mapa, botao_mapa = st.columns([6, 1], vertical_alignment="center")
     titulo_mapa.subheader("Mapa de calor dos acidentes")

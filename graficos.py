@@ -79,7 +79,8 @@ def grafico_linha_por_ano(serie, titulo, rotulo_y, cor):
         text=alt.Text("valor:Q", format=".0f"),
     )
 
-    return (linha + rotulos).properties(title=titulo, height=320)
+    grafico = (linha + rotulos).properties(height=320)
+    return grafico.properties(title=titulo) if titulo else grafico
 
 
 def grafico_barras_mes(df):
@@ -217,6 +218,7 @@ def grafico_frequencia(
     coluna,
     max_categorias_rotulo_horizontal=6,
     cor_texto=COR_VALOR,
+    mostrar_titulo=True,
 ):
     contagem = (
         df[coluna]
@@ -371,10 +373,11 @@ def grafico_frequencia(
     if quantidade_categorias > 14:
         altura = 640
 
-    titulo = alt.TitleParams(coluna)
+    texto_titulo = coluna if mostrar_titulo else ""
+    titulo = alt.TitleParams(texto_titulo) if mostrar_titulo else None
     if nulos:
         titulo = alt.TitleParams(
-            coluna,
+            texto_titulo,
             subtitle=(
                 f"Fora do gráfico: {formatar_inteiro(nulos)} nulos / não "
                 f"informados ({formatar_percentual(nulos / len(df) * 100)} "
@@ -383,11 +386,11 @@ def grafico_frequencia(
             subtitleColor="gray",
         )
 
-    return alt.layer(barras, valores, simbolos, nomes).properties(
-        title=titulo,
+    grafico = alt.layer(barras, valores, simbolos, nomes).properties(
         height=altura,
         padding={"left": 5, "top": 5, "bottom": 5, "right": largura_legenda},
     )
+    return grafico.properties(title=titulo) if titulo is not None else grafico
 
 
 def precisa_largura_total(df, coluna):
