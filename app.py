@@ -20,7 +20,9 @@ st.set_page_config(
 ESTILO = """
     <style>
     .st-key-metricas_visao [data-testid="stMetricLabel"],
-    .st-key-metricas_visao [data-testid="stMetricLabel"] * {
+    .st-key-metricas_visao [data-testid="stMetricLabel"] *,
+    .st-key-metricas_dados [data-testid="stMetricLabel"],
+    .st-key-metricas_dados [data-testid="stMetricLabel"] * {
         font-size: 1.1rem !important;
         font-weight: 700 !important;
     }
@@ -248,8 +250,8 @@ def renderizar_analise(conjuntos):
             )
 
 
-aba_visao, aba_mapa, aba_analise = st.tabs(
-    ["Visão geral", "Mapa de calor", "Análise de dados"],
+aba_visao, aba_mapa, aba_analise, aba_dados = st.tabs(
+    ["Visão geral", "Mapa de calor", "Análise de dados", "Dados"],
     on_change="rerun",
 )
 
@@ -333,9 +335,6 @@ with aba_visao:
             )
         )
 
-    st.subheader("Dados filtrados")
-    st.dataframe(filtrado, width="stretch")
-
 with aba_analise:
     vitimas = bases["vitimas"]
     renderizar_analise({
@@ -399,3 +398,31 @@ with aba_mapa:
             zoom=zoom_enviado,
             returned_objects=[],
         )
+
+with aba_dados:
+    # A tabela só é enviada ao navegador com a aba aberta.
+    if aba_dados.open:
+        st.subheader("Dados filtrados")
+
+        with st.container(key="metricas_dados"):
+            col1, col2, col3 = st.columns(3)
+
+            col1.metric(
+                "Linhas exibidas",
+                f"{len(filtrado):,}".replace(",", "."),
+                border=True
+            )
+
+            col2.metric(
+                "Linhas na base",
+                f"{len(df):,}".replace(",", "."),
+                border=True
+            )
+
+            col3.metric(
+                "Percentual da base",
+                f"{len(filtrado) / len(df) * 100:.1f}%".replace(".", ","),
+                border=True
+            )
+
+        st.dataframe(filtrado, width="stretch")
