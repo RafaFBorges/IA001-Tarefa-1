@@ -29,6 +29,7 @@ COR_NULO = "#8c8c8c"
 COR_DESTAQUE = "#9e9e9e"
 COR_VALOR = "#868e96"
 LIMITE_NOME_LEGENDA = 30
+LARGURA_COLUNA_GRADE = 600
 ALTURA_LINHA_LEGENDA = 24
 ROTULO_NULO = "Nulo / Não informado"
 PALETA_BASE = [
@@ -390,6 +391,23 @@ def grafico_frequencia(
         height=altura,
         padding={"left": 5, "top": 5, "bottom": 5, "right": largura_legenda},
     )
+
+
+def precisa_largura_total(df, coluna):
+    categorias = (
+        df[coluna]
+        .astype("string")
+        .dropna()
+        .unique()
+        .tolist()
+    )
+    if not categorias:
+        return False
+
+    maior_nome = min(max(len(c) for c in categorias), LIMITE_NOME_LEGENDA)
+    largura_legenda = 44 + 7 * maior_nome
+    largura_estimada = 70 + largura_legenda + 26 * len(categorias)
+    return largura_estimada > LARGURA_COLUNA_GRADE
 
 
 def estatisticas_descritivas(serie):

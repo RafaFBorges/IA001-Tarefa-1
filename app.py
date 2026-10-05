@@ -17,18 +17,34 @@ st.set_page_config(
     layout="wide"
 )
 
-st.markdown(
-    """
+ESTILO = """
     <style>
     .st-key-metricas_visao [data-testid="stMetricLabel"],
     .st-key-metricas_visao [data-testid="stMetricLabel"] * {
         font-size: 1.1rem !important;
         font-weight: 700 !important;
     }
+
+    /* Grade das categorias: 1 ou 2 colunas conforme a largura disponível.
+       Cada coluna tem no mínimo {LARGURA} px; gráficos largos ocupam a linha. */
+    .st-key-grade_categorias {
+        display: grid !important;
+        grid-template-columns: repeat(
+            auto-fit,
+            minmax(min(100%, max({LARGURA}px, calc(50% - 0.5rem))), 1fr)
+        );
+        gap: 1rem;
+    }
+    .st-key-grade_categorias > * {
+        min-width: 0;
+    }
+    .st-key-grade_categorias > *:has([class*="st-key-categoria_larga"]) {
+        grid-column: 1 / -1;
+    }
     </style>
-    """,
-    unsafe_allow_html=True,
-)
+    """.replace("{LARGURA}", str(graficos.LARGURA_COLUNA_GRADE))
+
+st.markdown(ESTILO, unsafe_allow_html=True)
 
 
 @st.cache_data
@@ -179,12 +195,11 @@ def renderizar_analise(conjuntos):
             ignorar=("dia_sem_normalizado",),
         )
 
-        for inicio in range(0, len(colunas), 2):
-            for painel, coluna in zip(
-                st.columns(2),
-                colunas[inicio:inicio + 2],
-            ):
-                with painel:
+        with st.container(key="grade_categorias"):
+            for indice, coluna in enumerate(colunas):
+                larga = graficos.precisa_largura_total(dados, coluna)
+                sufixo = "larga" if larga else "normal"
+                with st.container(key=f"categoria_{sufixo}_{indice}"):
                     mostrar_grafico(
                         graficos.grafico_frequencia(
                             dados,
