@@ -1,0 +1,38 @@
+# Python: bytecode e caches gerados automaticamente
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Ambientes virtuais
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Streamlit: só o config.toml é versionado; segredos ficam de fora
+.streamlit/secrets.toml
+
+# Segredos e configurações locais
+.env
+.env.*
+
+# Arquivo gerado pelo notebook (célula do mapa de calor)
+maps/*.html
+
+# Editores e sistema operacional
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs e temporários
+*.log
+*.tmp
+*.swp
