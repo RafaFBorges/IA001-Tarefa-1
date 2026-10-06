@@ -4,7 +4,7 @@ from streamlit_folium import st_folium
 
 import graficos
 import mapas
-from pipeline_dados import DATA_EXTRACAO, preparar_bases
+from pipeline_dados import DATA_EXTRACAO, ler_dados_brutos, preparar_bases
 
 BASE = Path(__file__).parent
 
@@ -18,10 +18,15 @@ ESTILO = """
     <style>
     .st-key-metricas_visao [data-testid="stMetricLabel"],
     .st-key-metricas_visao [data-testid="stMetricLabel"] *,
-    .st-key-metricas_dados [data-testid="stMetricLabel"],
-    .st-key-metricas_dados [data-testid="stMetricLabel"] * {
+    [class*="st-key-metricas_dados"] [data-testid="stMetricLabel"],
+    [class*="st-key-metricas_dados"] [data-testid="stMetricLabel"] * {
         font-size: 1.1rem !important;
         font-weight: 700 !important;
+    }
+
+    /* Título seguido de radio: 12 px entre o título e as opções. */
+    [class*="st-key-linha_radio"] {
+        gap: 12px !important;
     }
 
     /* Grade das categorias: 1 ou 2 colunas conforme a largura disponível.
@@ -50,6 +55,13 @@ st.markdown(ESTILO, unsafe_allow_html=True)
 def carregar_dados():
     _, tratados = preparar_bases(BASE)
     return tratados
+
+
+@st.cache_resource
+def carregar_brutos():
+    # CSVs inteiros, sem tratamento. Só são lidos ao abrir a aba Dados e
+    # ficam compartilhados em memória (somente leitura).
+    return ler_dados_brutos(BASE)
 
 
 st.title("🚦 Acidentes de trânsito em Porto Alegre")
@@ -110,16 +122,29 @@ VARIAVEIS_NUMERICAS = {
 }
 
 
-def selecionar_base(conjuntos, chave):
-    titulo, opcoes = st.columns([1, 6], vertical_alignment="center")
-    titulo.markdown("**Base de dados**")
-    return opcoes.radio(
-        "Base de dados",
-        list(conjuntos),
+def linha_com_radio(titulo, opcoes, chave, subtitulo=False):
+    """Título e radio horizontal na mesma linha, com 12 px entre eles."""
+    with st.container(
         horizontal=True,
-        key=chave,
-        label_visibility="collapsed",
-    )
+        vertical_alignment="center",
+        gap=None,
+        key=f"linha_radio_{chave}",
+    ):
+        if subtitulo:
+            st.subheader(titulo, width="content")
+        else:
+            st.markdown(f"**{titulo}**", width="content")
+        return st.radio(
+            titulo,
+            opcoes,
+            horizontal=True,
+            key=chave,
+            label_visibility="collapsed",
+        )
+
+
+def selecionar_base(conjuntos, chave):
+    return linha_com_radio("Base de dados", list(conjuntos), chave)
 
 
 def cor_do_texto():
@@ -399,30 +424,91 @@ with aba_mapa:
             returned_objects=[],
         )
 
+def mostrar_tabela(nome, visao, bruta, filtrada, aviso=None):
+    # Completo: o CSV inteiro, como foi lido. Filtrado: a base já tratada
+    # (duplicatas, coordenadas inválidas, datas após a extração) e filtrada.
+    exibida = filtrada if visao == "Filtrado" else bruta
+
+    # A legenda existe nas duas visões para a altura não mudar na troca.
+    st.caption(
+        aviso if visao == "Filtrado"
+        else "CSV inteiro, como foi lido, sem tratamento."
+    )
+
+    with st.container(key=f"metricas_dados_{nome}"):
+        col1, col2, col3 = st.columns(3)
+
+        col1.metric(
+            "Linhas exibidas",
+            f"{len(exibida):,}".replace(",", "."),
+            border=True
+        )
+
+        col2.metric(
+            "Linhas na base",
+            f"{len(bruta):,}".replace(",", "."),
+            border=True
+        )
+
+        col3.metric(
+            "Percentual da base",
+            f"{len(exibida) / len(bruta) * 100:.1f}%".replace(".", ","),
+            border=True
+        )
+
+    st.dataframe(exibida, width="stretch")
+
+
+@st.fragment
+def secao_dados():
+    # Fragmento: trocar de visão ou de tabela reexecuta só esta seção, sem
+    # recarregar o restante da página.
+    visao = linha_com_radio(
+        "Dados", ["Filtrado", "Completo"], "dados_visao", subtitulo=True
+    )
+
+    brutos = carregar_brutos()
+
+    aba_acidentes, aba_sinalizacao, aba_vitimas = st.tabs(
+        ["Acidentes", "Sinalização", "Vítimas"],
+        on_change="rerun",
+    )
+
+    # Filtrado usa as bases tratadas: o filtro de ano vale para acidentes e
+    # vítimas, o de graves só para acidentes e a sinalização não é filtrada.
+    with aba_acidentes:
+        if aba_acidentes.open:
+            mostrar_tabela(
+                "acidentes",
+                visao,
+                brutos["acidentes"],
+                filtrado,
+                aviso="Base tratada, com os filtros de ano e de acidentes graves."
+            )
+
+    with aba_sinalizacao:
+        if aba_sinalizacao.open:
+            mostrar_tabela(
+                "sinalizacao",
+                visao,
+                brutos["sinalizacao"],
+                bases["sinalizacao"],
+                aviso="Base tratada. A sinalização não é afetada pelos filtros."
+            )
+
+    with aba_vitimas:
+        if aba_vitimas.open:
+            vitimas = bases["vitimas"]
+            mostrar_tabela(
+                "vitimas",
+                visao,
+                brutos["vitimas"],
+                vitimas[vitimas["data"].dt.year.isin(anos_selecionados)],
+                aviso="Base tratada, com o filtro de ano."
+            )
+
+
 with aba_dados:
     # A tabela só é enviada ao navegador com a aba aberta.
     if aba_dados.open:
-        st.subheader("Dados filtrados")
-
-        with st.container(key="metricas_dados"):
-            col1, col2, col3 = st.columns(3)
-
-            col1.metric(
-                "Linhas exibidas",
-                f"{len(filtrado):,}".replace(",", "."),
-                border=True
-            )
-
-            col2.metric(
-                "Linhas na base",
-                f"{len(df):,}".replace(",", "."),
-                border=True
-            )
-
-            col3.metric(
-                "Percentual da base",
-                f"{len(filtrado) / len(df) * 100:.1f}%".replace(".", ","),
-                border=True
-            )
-
-        st.dataframe(filtrado, width="stretch")
+        secao_dados()
