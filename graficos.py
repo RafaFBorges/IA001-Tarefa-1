@@ -148,7 +148,7 @@ def grafico_dias_uteis_fim_de_semana(df):
     )
 
 
-def grafico_heatmap_dia_hora(df):
+def dados_heatmap_dia_hora(df):
     hora = pd.to_numeric(
         df["hora"].astype("string").str.extract(r"(\d{1,2})")[0],
         errors="coerce",
@@ -175,6 +175,12 @@ def grafico_heatmap_dia_hora(df):
         how="left",
     ).fillna({"quantidade": 0})
 
+    return dados
+
+
+def grafico_heatmap_dia_hora(dados, piso=0):
+    maximo = dados["quantidade"].max()
+
     return (
         alt.Chart(dados)
         .mark_rect()
@@ -187,7 +193,11 @@ def grafico_heatmap_dia_hora(df):
             y=alt.Y("dia_sem_normalizado:O", sort=ORDEM_DIAS, title=None),
             color=alt.Color(
                 "quantidade:Q",
-                scale=alt.Scale(scheme="yelloworangered"),
+                scale=alt.Scale(
+                    scheme="yelloworangered",
+                    domain=[piso, max(maximo, piso + 1)],
+                    clamp=True,
+                ),
                 legend=alt.Legend(title="Acidentes"),
             ),
             tooltip=[
@@ -196,10 +206,7 @@ def grafico_heatmap_dia_hora(df):
                 alt.Tooltip("quantidade:Q", title="Acidentes", format=".0f"),
             ],
         )
-        .properties(
-            title="Distribuição de acidentes por dia da semana e horário",
-            height=320,
-        )
+        .properties(height=320)
     )
 
 

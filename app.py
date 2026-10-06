@@ -134,6 +134,40 @@ def mostrar_grafico(grafico):
     st.altair_chart(grafico, width="stretch")
 
 
+@st.fragment
+def mostrar_heatmap_dia_hora(dados_heatmap):
+    maximo_heatmap = int(dados_heatmap["quantidade"].max())
+
+    st.subheader("Distribuição de acidentes por dia da semana e horário")
+
+    piso_heatmap = 0
+    if maximo_heatmap > 1:
+        piso_heatmap = st.slider(
+            "Piso da escala de cores (acidentes)",
+            min_value=0,
+            max_value=maximo_heatmap - 1,
+            value=0,
+            help=(
+                "Células com acidentes até este valor ficam com a cor "
+                "mais clara. O tooltip continua mostrando a contagem real."
+            ),
+        )
+        if piso_heatmap:
+            st.caption(
+                f"Cores a partir de {piso_heatmap} acidentes: células "
+                "abaixo disso aparecem na cor mais clara."
+            )
+        else:
+            st.caption(
+                "Escala completa: as cores cobrem de 0 ao máximo de "
+                "acidentes."
+            )
+
+    mostrar_grafico(
+        graficos.grafico_heatmap_dia_hora(dados_heatmap, piso_heatmap)
+    )
+
+
 def renderizar_analise(conjuntos):
     acidentes = conjuntos["Acidentes"]
 
@@ -296,7 +330,9 @@ with aba_visao:
         )
 
     if not filtrado.empty:
-        mostrar_grafico(graficos.grafico_heatmap_dia_hora(filtrado))
+        mostrar_heatmap_dia_hora(
+            graficos.dados_heatmap_dia_hora(filtrado)
+        )
 
         esquerda, direita = st.columns(2)
 
