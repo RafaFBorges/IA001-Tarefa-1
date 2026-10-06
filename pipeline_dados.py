@@ -40,6 +40,22 @@ COLUNAS_NUMERICAS_SINALIZACAO = [
     "num_final",
 ]
 
+CATEGORIA_OUTROS = "Outras placas e marcações"
+
+# A base tem 414 descrições diferentes de sinalização. As regras abaixo as
+# agrupam por palavras-chave; vale a primeira regra que combinar e o que não
+# combina com nenhuma fica em CATEGORIA_OUTROS.
+REGRAS_CATEGORIA_SINALIZACAO = [
+    ("Transporte coletivo", r"ÔNIBUS|ONIBUS|ABRIGO|PONTO DE PARADA|PARADA SEGURA|LOTAÇÃO|LOTACAO|TÁXI|TAXI"),
+    ("Travessia de pedestres", r"TRAVESSIA|PEDESTRE|ESCOLAR|APERTE O BOT|ILHAS E REFUG|REFÚGIO|REFUGIO"),
+    ("Bicicletas", r"CICLO|CICLIST|BICICLET"),
+    ("Pare / retenção", r"PARADA OBRIGAT|^PARE\b|FAIXA DE RETEN|PREFER"),
+    ("Velocidade e moderadores", r"VELOCIDADE|LOMBADA|SALIÊNCIA|SALIENCIA|REDUTOR|FISCALIZAÇÃO ELETR"),
+    ("Estacionamento", r"ESTACION|PROIBIDO PARAR|ÁREA AZUL|AREA AZUL|CARGA E DESCARGA|BOX|EMBARQUE"),
+    ("Divisão de pista e delimitação", r"DIVISÃO DE PISTA|DIVISAO DE PISTA|LINHA|TACHÃO|TACHAO|BALIZADOR|CANALIZAÇÃO|CANALIZACAO|GRADIL|BORDO|FAIXA EXCLUSIVA|DELIMIT|SEGREGADOR|MARCA"),
+    ("Setas e orientação", r"SETA|SENTIDO|VIRE|VIRAR|RETORNAR|SIGA EM FRENTE|SEM SAÍDA|SEM SAIDA|CIRCULAÇÃO|CIRCULACAO|INDICATIV|ORIENTA"),
+]
+
 MARCADORES_NULOS = ["", " ", "null", "none", "nan", "n/a", "na", "-", "--"]
 
 
@@ -167,10 +183,20 @@ def preparar_vitimas(dataframe):
     return _converter_numeros(vitimas, COLUNAS_NUMERICAS_VITIMAS)
 
 
+def classificar_sinalizacao(descricao):
+    texto = descricao.astype("string").fillna("").str.upper()
+    categoria = pd.Series(CATEGORIA_OUTROS, index=descricao.index, dtype="object")
+    for nome, regra in reversed(REGRAS_CATEGORIA_SINALIZACAO):
+        categoria = categoria.mask(texto.str.contains(regra, regex=True).fillna(False), nome)
+    return categoria
+
+
 def preparar_sinalizacao(dataframe):
     sinalizacao = _preparar_base(dataframe)
     sinalizacao = _filtrar_coordenadas(sinalizacao)
-    return _converter_numeros(sinalizacao, COLUNAS_NUMERICAS_SINALIZACAO)
+    sinalizacao = _converter_numeros(sinalizacao, COLUNAS_NUMERICAS_SINALIZACAO)
+    sinalizacao["categoria"] = classificar_sinalizacao(sinalizacao["descricao"])
+    return sinalizacao
 
 
 def preparar_bases(base_dir):

@@ -1,15 +1,12 @@
 from pathlib import Path
 import streamlit as st
-import folium
-from folium.plugins import HeatMap
 from streamlit_folium import st_folium
 
 import graficos
+import mapas
 from pipeline_dados import DATA_EXTRACAO, preparar_bases
 
 BASE = Path(__file__).parent
-CENTRO_MAPA = [-30.0346, -51.2177]
-ZOOM_MAPA = 12
 
 st.set_page_config(
     page_title="Acidentes de trânsito em Porto Alegre",
@@ -214,7 +211,7 @@ def renderizar_analise(conjuntos):
 
 
 aba_visao, aba_mapa, aba_analise, aba_dados = st.tabs(
-    ["Visão geral", "Mapa de calor", "Análise de dados", "Dados"],
+    ["Visão geral", "Mapas", "Análise de dados", "Dados"],
     on_change="rerun",
 )
 
@@ -323,10 +320,10 @@ with aba_analise:
 
 with aba_mapa:
     # O mapa só é criado com a aba aberta: dentro de uma aba escondida ele
-    # nasce com largura zero e o heat layer falha ao desenhar.
+    # nasce com largura zero e as camadas falham ao desenhar.
     if aba_mapa.open:
         titulo_mapa, botao_mapa = st.columns([6, 1], vertical_alignment="center")
-        titulo_mapa.subheader("Mapa de calor dos acidentes")
+        titulo_mapa.subheader("Mapas dos acidentes e da sinalização")
 
         if "cliques_centralizar" not in st.session_state:
             st.session_state["cliques_centralizar"] = 0
@@ -334,46 +331,53 @@ with aba_mapa:
         if botao_mapa.button("Centralizar mapa", width="stretch"):
             st.session_state["cliques_centralizar"] += 1
 
+        titulo_visao, opcoes_visao = st.columns([1, 6], vertical_alignment="center")
+        titulo_visao.markdown("**Visualização**")
+        visao = opcoes_visao.radio(
+            "Visualização",
+            ["Pontos", "Mapa de calor", "Sinalização"],
+            horizontal=True,
+            key="visao_mapa",
+            label_visibility="collapsed",
+        )
+
         # O componente só reposiciona o mapa quando center/zoom diferem do último
         # valor enviado. Por isso cada clique alterna uma diferença imperceptível
         # (cerca de 10 cm e 0,001 de zoom, que o Leaflet arredonda): o mapa volta
         # à posição inicial sem ser recriado.
         alternar = st.session_state["cliques_centralizar"] % 2
-        centro_enviado = [CENTRO_MAPA[0] + alternar * 1e-6, CENTRO_MAPA[1]]
-        zoom_enviado = ZOOM_MAPA + alternar * 0.001
+        centro_enviado = [mapas.CENTRO_MAPA[0] + alternar * 1e-6, mapas.CENTRO_MAPA[1]]
+        zoom_enviado = mapas.ZOOM_MAPA + alternar * 0.001
 
-        mapa_dados = filtrado.dropna(
-            subset=["latitude", "longitude"]
-        ).copy()
+        if visao == "Sinalização":
+            st.caption(
+                "Cadastro atual de sinalização gráfica da EPTC, sem relação com "
+                "os filtros da barra lateral. Cada tipo tem uma cor e um formato "
+                "(veja o painel do mapa). Com \"Agrupar sinais próximos\" "
+                "ligado, sinais do mesmo tipo e próximos viram um ponto com o "
+                "número de sinais; aproxime o zoom para separá-los. Passe o "
+                "mouse sobre um ponto para ver a descrição e o ano de "
+                "implantação."
+            )
+            mapa = mapas.mapa_sinalizacao(bases["sinalizacao"])
+        elif filtrado.empty:
+            mapa = None
+            st.info("Nenhum acidente para os filtros selecionados.")
+        elif visao == "Pontos":
+            mapa = mapas.mapa_pontos(filtrado)
+        else:
+            mapa = mapas.mapa_calor(filtrado)
 
-        mapa_dados = mapa_dados[
-            mapa_dados["latitude"].between(-30.30, -29.90)
-            & mapa_dados["longitude"].between(-51.30, -51.00)
-        ]
-
-        mapa = folium.Map(
-            location=CENTRO_MAPA,
-            zoom_start=ZOOM_MAPA,
-            tiles="OpenStreetMap"
-        )
-
-        if not mapa_dados.empty:
-            HeatMap(
-                mapa_dados[["latitude", "longitude"]].values.tolist(),
-                radius=12,
-                blur=18,
-                min_opacity=0.4
-            ).add_to(mapa)
-
-        st_folium(
-            mapa,
-            width=None,
-            height=600,
-            key="mapa_calor",
-            center=centro_enviado,
-            zoom=zoom_enviado,
-            returned_objects=[],
-        )
+        if mapa is not None:
+            st_folium(
+                mapa,
+                width=None,
+                height=650,
+                key="mapa_acidentes",
+                center=centro_enviado,
+                zoom=zoom_enviado,
+                returned_objects=[],
+            )
 
 with aba_dados:
     # A tabela só é enviada ao navegador com a aba aberta.
