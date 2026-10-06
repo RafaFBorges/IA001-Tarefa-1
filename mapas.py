@@ -61,6 +61,7 @@ SCRIPT_AGRUPADA = """
     var visivel = [];
     for (var v = 0; v < NC; v++) { visivel.push(true); }
     var agrupar = true;
+    var destaque = -1;   // tipo sob o mouse no painel: é desenhado por cima de todos
     var cache = {};
     var ativo = {{ "true" if this.ativo else "false" }};
 
@@ -155,7 +156,8 @@ SCRIPT_AGRUPADA = """
     function depurar() {
         return { agrupar: agrupar, desenhados: hx.length, itens: fonteAtual.x.length,
                  total: N, zoom: mapa.getZoom(), desenhos: desenhos, zoomando: zoomando, ativo: ativo,
-                 opacidade: canvas.style.opacity };
+                 opacidade: canvas.style.opacity, destaque: destaque,
+                 topoTipo: hk.length ? fonteAtual.cat[hk[hk.length - 1]] : -1 };
     }
 
     function rotulo(n) {
@@ -215,6 +217,16 @@ SCRIPT_AGRUPADA = """
         if (agrupar) {
             ordem.sort(function (a, b) { return fonte.n[b] - fonte.n[a]; });
         }
+        if (destaque >= 0) {
+            var normais = [], realcados = [];
+            for (var r = 0; r < ordem.length; r++) {
+                (fonte.cat[ordem[r]] === destaque ? realcados : normais).push(ordem[r]);
+            }
+            ordem = normais.concat(realcados);
+        }
+        var ordemTipos = [];
+        for (var ot = 0; ot < NC; ot++) { if (ot !== destaque) { ordemTipos.push(ot); } }
+        if (destaque >= 0) { ordemTipos.push(destaque); }
         ctx.lineWidth = 1;
         ctx.strokeStyle = "rgba(255,255,255,0.9)";
 
@@ -233,7 +245,8 @@ SCRIPT_AGRUPADA = """
             // não dá para distingui-los; quadradinhos coloridos são bem mais
             // rápidos de desenhar.
             var simples = nVis > 20000;
-            for (var c = 0; c < NC; c++) {
+            for (var ci = 0; ci < ordemTipos.length; ci++) {
+                var c = ordemTipos[ci];
                 var lista = porTipo[c];
                 if (lista.length === 0) { continue; }
                 ctx.globalAlpha = D.cats[c].alfa || 0.8;
@@ -269,6 +282,10 @@ SCRIPT_AGRUPADA = """
         var caixas = [];
         var porTamanho = agrupar ? ordem.filter(function (q) { return fonte.n[q] > 1; }) : [];
         porTamanho.sort(function (a, b) { return fonte.n[b] - fonte.n[a]; });
+        if (destaque >= 0) {
+            porTamanho = porTamanho.filter(function (q) { return fonte.cat[q] === destaque; })
+                .concat(porTamanho.filter(function (q) { return fonte.cat[q] !== destaque; }));
+        }
         var deslocamentos = [0, 16, -16];
         for (var t = 0; t < porTamanho.length && caixas.length < 1500; t++) {
             var qq = porTamanho[t];
@@ -379,7 +396,16 @@ SCRIPT_AGRUPADA = """
         titulo.textContent = D.titulo;
         D.cats.forEach(function (cfg, c) {
             var linha = L.DomUtil.create("label", "", div);
-            linha.style.cssText = "display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap;";
+            linha.style.cssText = "display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap;" +
+                "padding:1px 4px;margin:0 -4px;border-radius:4px;";
+            linha.title = "Passe o mouse para trazer este tipo para a frente";
+            linha.addEventListener("mouseenter", function () {
+                destaque = c; linha.style.background = "#e9eef5"; agendar();
+            });
+            linha.addEventListener("mouseleave", function () {
+                if (destaque === c) { destaque = -1; }
+                linha.style.background = ""; agendar();
+            });
             var caixa = L.DomUtil.create("input", "", linha);
             caixa.type = "checkbox"; caixa.checked = true;
             caixa.addEventListener("change", function () { visivel[c] = caixa.checked; agendar(); });
@@ -430,6 +456,7 @@ SCRIPT_AGRUPADA = """
         },
         ocultar: function () {
             ativo = false;
+            destaque = -1;
             fecharDica();
             hx = []; hy = []; hr = []; hk = [];
             canvas.style.display = "none";
