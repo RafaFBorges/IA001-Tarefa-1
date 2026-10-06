@@ -331,16 +331,6 @@ with aba_mapa:
         if botao_mapa.button("Centralizar mapa", width="stretch"):
             st.session_state["cliques_centralizar"] += 1
 
-        titulo_visao, opcoes_visao = st.columns([1, 6], vertical_alignment="center")
-        titulo_visao.markdown("**Visualização**")
-        visao = opcoes_visao.radio(
-            "Visualização",
-            ["Pontos", "Mapa de calor", "Sinalização"],
-            horizontal=True,
-            key="visao_mapa",
-            label_visibility="collapsed",
-        )
-
         # O componente só reposiciona o mapa quando center/zoom diferem do último
         # valor enviado. Por isso cada clique alterna uma diferença imperceptível
         # (cerca de 10 cm e 0,001 de zoom, que o Leaflet arredonda): o mapa volta
@@ -349,35 +339,29 @@ with aba_mapa:
         centro_enviado = [mapas.CENTRO_MAPA[0] + alternar * 1e-6, mapas.CENTRO_MAPA[1]]
         zoom_enviado = mapas.ZOOM_MAPA + alternar * 0.001
 
-        if visao == "Sinalização":
-            st.caption(
-                "Cadastro atual de sinalização gráfica da EPTC, sem relação com "
-                "os filtros da barra lateral. Cada tipo tem uma cor e um formato "
-                "(veja o painel do mapa). Com \"Agrupar sinais próximos\" "
-                "ligado, sinais do mesmo tipo e próximos viram um ponto com o "
-                "número de sinais; aproxime o zoom para separá-los. Passe o "
-                "mouse sobre um ponto para ver a descrição e o ano de "
-                "implantação."
-            )
-            mapa = mapas.mapa_sinalizacao(bases["sinalizacao"])
-        elif filtrado.empty:
-            mapa = None
-            st.info("Nenhum acidente para os filtros selecionados.")
-        elif visao == "Pontos":
-            mapa = mapas.mapa_pontos(filtrado)
-        else:
-            mapa = mapas.mapa_calor(filtrado)
+        st.caption(
+            "Use o painel \"Visualização\" no mapa para alternar entre os pontos "
+            "dos acidentes, o mapa de calor e a sinalização. Os acidentes seguem "
+            "os filtros da barra lateral; a sinalização é o cadastro atual da "
+            "EPTC e não é filtrada. Passe o mouse sobre um ponto para ver os "
+            "detalhes."
+        )
 
-        if mapa is not None:
-            st_folium(
-                mapa,
-                width=None,
-                height=650,
-                key="mapa_acidentes",
-                center=centro_enviado,
-                zoom=zoom_enviado,
-                returned_objects=[],
+        if filtrado.empty:
+            st.info(
+                "Nenhum acidente para os filtros selecionados; só a "
+                "sinalização é exibida."
             )
+
+        st_folium(
+            mapas.mapa_vistas(filtrado, bases["sinalizacao"]),
+            width=None,
+            height=650,
+            key="mapa_acidentes",
+            center=centro_enviado,
+            zoom=zoom_enviado,
+            returned_objects=[],
+        )
 
 with aba_dados:
     # A tabela só é enviada ao navegador com a aba aberta.

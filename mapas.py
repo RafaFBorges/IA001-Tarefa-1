@@ -4,7 +4,6 @@ import json
 import folium
 import pandas as pd
 from branca.element import MacroElement
-from folium.map import Layer
 from folium.plugins import HeatMap
 from jinja2 import Template
 
@@ -15,6 +14,11 @@ LIMITES_LONGITUDE = (-51.30, -51.00)
 
 COR_GRAVE = "#d73027"
 COR_DEMAIS = "#2b6cb0"
+
+NOTA_AGRUPAMENTO = (
+    "Itens do mesmo tipo e próximos viram um ponto com o número de itens. "
+    "Aproxime o zoom para separá-los."
+)
 
 # Cor e formato de cada grupo de sinalização. Os dois juntos ajudam a
 # diferenciar os grupos mesmo com muitos pontos sobrepostos.
@@ -31,71 +35,11 @@ ESTILO_SINALIZACAO = {
 }
 
 
-class CamadaPontos(Layer):
-    """Camada Leaflet de pontos desenhados em canvas.
-
-    Os pontos vão como uma lista compacta de [lat, lon, texto opcional] e os
-    marcadores são criados no navegador, o que mantém o HTML pequeno mesmo com
-    dezenas de milhares de pontos.
-    """
-
-    _template = Template("""
-        {% macro script(this, kwargs) %}
-        var {{ this.get_name() }} = L.layerGroup();
-        (function () {
-            var renderer = L.canvas({padding: 0.5});
-            var pontos = {{ this.pontos }};
-            var estilo = {{ this.estilo }};
-            var marcadores = [];
-            for (var i = 0; i < pontos.length; i++) {
-                var p = pontos[i];
-                var marcador = L.circleMarker(
-                    [p[0], p[1]],
-                    Object.assign({renderer: renderer}, estilo)
-                );
-                if (p.length > 2) { marcador.bindTooltip(p[2]); }
-                marcador.addTo({{ this.get_name() }});
-                marcadores.push(marcador);
-            }
-
-            // O raio cresce com o zoom: pequeno na cidade inteira (onde os
-            // pontos se sobrepõem) e maior quando se aproxima do local.
-            var mapa = {{ this._parent.get_name() }};
-            var raioMin = {{ this.raio_min }}, raioMax = {{ this.raio_max }};
-            function ajustarRaio() {
-                var fracao = Math.min(1, Math.max(0, (mapa.getZoom() - 11) / 6));
-                var raio = raioMin + (raioMax - raioMin) * fracao;
-                for (var j = 0; j < marcadores.length; j++) {
-                    marcadores[j].setRadius(raio);
-                }
-            }
-            mapa.on("zoomend", ajustarRaio);
-            ajustarRaio();
-        })();
-        {% if this.show %}
-        {{ this.get_name() }}.addTo({{ this._parent.get_name() }});
-        {% endif %}
-        {% endmacro %}
-    """)
-
-    def __init__(self, pontos, estilo, name, raio_min, raio_max, show=True):
-        super().__init__(name=name, overlay=True, control=True, show=show)
-        self._name = "CamadaPontos"
-        self.raio_min = raio_min
-        self.raio_max = raio_max
-        self.pontos = json.dumps(
-            pontos,
-            ensure_ascii=False,
-            separators=(",", ":"),
-        ).replace("</", "<\\/")
-        self.estilo = json.dumps(estilo)
-
-
 # O Leaflet só desenha círculos prontos. Para ter formatos diferentes e
 # agrupar sinais por zoom, a sinalização é desenhada em um canvas próprio.
 # Os pontos ficam em coordenadas de mundo (Mercator, de 0 a 1) e o agrupamento
 # é feito em células de pixels do zoom atual, separadamente por grupo.
-SCRIPT_SINALIZACAO = """
+SCRIPT_AGRUPADA = """
 {% macro script(this, kwargs) %}
 (function () {
     var mapa = {{ this._parent.get_name() }};
@@ -118,6 +62,7 @@ SCRIPT_SINALIZACAO = """
     for (var v = 0; v < NC; v++) { visivel.push(true); }
     var agrupar = true;
     var cache = {};
+    var ativo = {{ "true" if this.ativo else "false" }};
 
     // ---------- formatos ----------
     var CRUZ = [[-0.38,-1],[0.38,-1],[0.38,-0.38],[1,-0.38],[1,0.38],[0.38,0.38],
@@ -189,12 +134,13 @@ SCRIPT_SINALIZACAO = """
     // ---------- canvas ----------
     // O canvas fica numa camada própria do Leaflet, abaixo da camada das
     // dicas (z-index 650), para a dica sempre aparecer por cima dos pontos.
-    var camadaSinais = mapa.createPane("sinais");
+    var camadaSinais = mapa.createPane("agrupada-" + D.id);
     camadaSinais.style.zIndex = 450;
     camadaSinais.style.pointerEvents = "none";
     var canvas = document.createElement("canvas");
     canvas.style.cssText = "position:absolute;top:0;left:0;pointer-events:none;";
     camadaSinais.appendChild(canvas);
+    canvas.style.display = ativo ? "" : "none";
     // As camadas se movem junto com o mapa; o canvas acompanha o contrário,
     // para continuar cobrindo exatamente a área visível.
     function posicionar() {
@@ -206,11 +152,11 @@ SCRIPT_SINALIZACAO = """
     var pendente = false;
     var zoomando = false;
     var desenhos = 0;
-    window.sinaisDebug = function () {
+    function depurar() {
         return { agrupar: agrupar, desenhados: hx.length, itens: fonteAtual.x.length,
-                 total: N, zoom: mapa.getZoom(), desenhos: desenhos, zoomando: zoomando,
+                 total: N, zoom: mapa.getZoom(), desenhos: desenhos, zoomando: zoomando, ativo: ativo,
                  opacidade: canvas.style.opacity };
-    };
+    }
 
     function rotulo(n) {
         return n < 1000 ? String(n) : (n / 1000).toFixed(1).replace(".", ",") + "k";
@@ -255,7 +201,7 @@ SCRIPT_SINALIZACAO = """
             if (sx < -margem || sy < -margem || sx > tam.x + margem || sy > tam.y + margem) { continue; }
             var n = fonte.n[k];
             vx[k] = sx; vy[k] = sy;
-            vr[k] = n > 1 ? base + Math.min(10, 2.6 * Math.log2(n)) : base;
+            vr[k] = n > 1 ? base + Math.min(10, 2.6 * Math.log2(n)) : base * (D.cats[ck].escala || 1);
             porTipo[ck].push(k);
             nVis += 1;
         }
@@ -277,7 +223,8 @@ SCRIPT_SINALIZACAO = """
                 var q = ordem[o], cfgq = D.cats[fonte.cat[q]];
                 ctx.beginPath();
                 tracar(ctx, cfgq.forma, vx[q], vy[q], vr[q]);
-                ctx.globalAlpha = 0.8; ctx.fillStyle = cfgq.cor; ctx.fill();
+                ctx.globalAlpha = fonte.n[q] > 1 ? 0.85 : (cfgq.alfa || 0.8);
+                ctx.fillStyle = cfgq.cor; ctx.fill();
                 ctx.globalAlpha = 0.9; ctx.stroke();
                 hx.push(vx[q]); hy.push(vy[q]); hr.push(vr[q]); hk.push(q);
             }
@@ -289,7 +236,7 @@ SCRIPT_SINALIZACAO = """
             for (var c = 0; c < NC; c++) {
                 var lista = porTipo[c];
                 if (lista.length === 0) { continue; }
-                ctx.globalAlpha = 0.8;
+                ctx.globalAlpha = D.cats[c].alfa || 0.8;
                 ctx.fillStyle = D.cats[c].cor;
                 if (!simples) { ctx.beginPath(); }
                 for (var o2 = 0; o2 < lista.length; o2++) {
@@ -310,34 +257,53 @@ SCRIPT_SINALIZACAO = """
         }
         ctx.globalAlpha = 1;
 
-        // 3) números dos grupos, dos maiores para os menores, pulando os que
-        //    colidiriam com um número já desenhado
+        // 3) números dos grupos, dos maiores para os menores. Cada número vai
+        //    numa etiqueta na cor do seu tipo (assim fica claro a qual tipo ele
+        //    pertence quando grupos de tipos diferentes se sobrepõem). Se uma
+        //    etiqueta colidir com outra, ela desce ou sobe um pouco; se ainda
+        //    colidir, é omitida.
         ctx.font = "bold 11px sans-serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.lineJoin = "round";
-        ctx.lineWidth = 3;
         var caixas = [];
         var porTamanho = agrupar ? ordem.filter(function (q) { return fonte.n[q] > 1; }) : [];
+        porTamanho.sort(function (a, b) { return fonte.n[b] - fonte.n[a]; });
+        var deslocamentos = [0, 16, -16];
         for (var t = 0; t < porTamanho.length && caixas.length < 1500; t++) {
             var qq = porTamanho[t];
             var txt = rotulo(fonte.n[qq]);
-            var meia = ctx.measureText(txt).width / 2 + 2;
-            var colide = false;
-            for (var b = 0; b < caixas.length; b++) {
-                var cb = caixas[b];
-                if (Math.abs(vx[qq] - cb[0]) < meia + cb[2] && Math.abs(vy[qq] - cb[1]) < 11) { colide = true; break; }
+            var meia = ctx.measureText(txt).width / 2 + 5;
+            var yc = null;
+            for (var d = 0; d < deslocamentos.length && yc === null; d++) {
+                var ty = vy[qq] + deslocamentos[d];
+                var colide = false;
+                for (var b = 0; b < caixas.length; b++) {
+                    var cb = caixas[b];
+                    if (Math.abs(vx[qq] - cb[0]) < meia + cb[2] && Math.abs(ty - cb[1]) < 15) { colide = true; break; }
+                }
+                if (!colide) { yc = ty; }
             }
-            if (colide) { continue; }
-            caixas.push([vx[qq], vy[qq], meia]);
-            ctx.strokeStyle = "rgba(0,0,0,0.75)";
-            ctx.strokeText(txt, vx[qq], vy[qq] + 0.5);
+            if (yc === null) { continue; }
+            caixas.push([vx[qq], yc, meia]);
+            ctx.beginPath();
+            ctx.rect(vx[qq] - meia, yc - 8, meia * 2, 16);
+            ctx.fillStyle = D.cats[fonte.cat[qq]].cor;
+            ctx.globalAlpha = 0.95;
+            ctx.fill();
+            ctx.globalAlpha = 1;
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = "rgba(255,255,255,0.95)";
+            ctx.stroke();
+            ctx.lineWidth = 2.5;
+            ctx.strokeStyle = "rgba(0,0,0,0.55)";
+            ctx.strokeText(txt, vx[qq], yc + 0.5);
             ctx.fillStyle = "#ffffff";
-            ctx.fillText(txt, vx[qq], vy[qq] + 0.5);
+            ctx.fillText(txt, vx[qq], yc + 0.5);
         }
     }
     function agendar() {
-        if (zoomando) { return; }
+        if (zoomando || !ativo) { return; }
         if (!pendente) { pendente = true; requestAnimationFrame(desenhar); }
     }
 
@@ -347,6 +313,11 @@ SCRIPT_SINALIZACAO = """
                            className: "dica-sinais" });
     var itemAtual = null;
     function descricaoDe(i) {
+        if (D.modo === "acidentes") {
+            return "<b>" + D.descr[D.d[i]] + "</b><br>" + D.datas[D.dt[i]] + " às " +
+                D.horas[D.hh[i]] + "<br>" + D.ruas[D.rr[i]] + "<br>Feridos: " + D.fe[i] +
+                " (graves: " + D.fg[i] + ") · Mortes: " + D.mo[i];
+        }
         return D.descr[D.d[i]] + (D.ano[i] ? "<br>Implantada em " + D.ano[i] : "");
     }
     function conteudo(k) {
@@ -366,8 +337,8 @@ SCRIPT_SINALIZACAO = """
         var linhas = pares.slice(0, 6).map(function (p) {
             return D.descr[p[0]] + " <b>×" + p[1] + "</b>";
         });
-        var extra = pares.length > 6 ? "<br>…e mais " + (pares.length - 6) + " descrições" : "";
-        return titulo + " — <b>" + n.toLocaleString("pt-BR") + " sinais</b><br>" + linhas.join("<br>") + extra;
+        var extra = pares.length > 6 ? "<br>…e mais " + (pares.length - 6) + " " + D.rotulo_tipos : "";
+        return titulo + " — <b>" + n.toLocaleString("pt-BR") + " " + D.unidade + "</b><br>" + linhas.join("<br>") + extra;
     }
     function fecharDica() {
         itemAtual = null;
@@ -375,6 +346,7 @@ SCRIPT_SINALIZACAO = """
         mapa.getContainer().style.cursor = "";
     }
     mapa.on("mousemove", function (e) {
+        if (!ativo) { return; }
         var p = e.containerPoint, achado = -1;
         for (var j = hx.length - 1; j >= 0; j--) {
             var dx = hx[j] - p.x, dy = hy[j] - p.y, lim = hr[j] + 2;
@@ -398,13 +370,13 @@ SCRIPT_SINALIZACAO = """
     // ---------- painel: tipos de sinalização e agrupamento ----------
     var painel = L.control({ position: "topright" });
     painel.onAdd = function () {
-        var div = L.DomUtil.create("div", "painel-sinais");
+        var div = L.DomUtil.create("div", "painel-agrupada");
         div.style.cssText = "background:rgba(255,255,255,0.96);color:#222;padding:10px 12px;" +
             "border-radius:6px;box-shadow:0 1px 5px rgba(0,0,0,0.4);font:13px/1.5 sans-serif;" +
             "max-height:" + Math.max(200, mapa.getSize().y - 40) + "px;overflow:auto;";
         var titulo = L.DomUtil.create("div", "", div);
         titulo.style.cssText = "font-weight:700;margin-bottom:4px;";
-        titulo.textContent = "Tipo de sinalização";
+        titulo.textContent = D.titulo;
         D.cats.forEach(function (cfg, c) {
             var linha = L.DomUtil.create("label", "", div);
             linha.style.cssText = "display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap;";
@@ -419,6 +391,11 @@ SCRIPT_SINALIZACAO = """
             cx.lineWidth = 1; cx.strokeStyle = "#888"; cx.stroke();
             var texto = L.DomUtil.create("span", "", linha);
             texto.innerHTML = cfg.nome + " <b>(" + cfg.n.toLocaleString("pt-BR") + ")</b>";
+            if (cfg.ajuda) {
+                var ajuda = L.DomUtil.create("div", "", div);
+                ajuda.style.cssText = "font-size:11px;color:#666;margin:-2px 0 3px 46px;";
+                ajuda.textContent = cfg.ajuda;
+            }
         });
         var sep = L.DomUtil.create("div", "", div);
         sep.style.cssText = "border-top:1px solid #ddd;margin:7px 0 6px;";
@@ -428,21 +405,43 @@ SCRIPT_SINALIZACAO = """
         caixaG.type = "checkbox"; caixaG.checked = true;
         caixaG.addEventListener("change", function () { agrupar = caixaG.checked; fecharDica(); agendar(); });
         var textoG = L.DomUtil.create("span", "", linhaG);
-        textoG.textContent = "Agrupar sinais próximos";
+        textoG.textContent = D.rotulo_agrupar;
         var nota = L.DomUtil.create("div", "", div);
         nota.style.cssText = "font-size:11px;color:#666;max-width:250px;margin-top:3px;line-height:1.35;";
-        nota.textContent = "Sinais do mesmo tipo e próximos viram um ponto com o número de " +
-            "sinais. Aproxime o zoom para separá-los.";
+        nota.textContent = D.nota;
         L.DomEvent.disableClickPropagation(div);
         L.DomEvent.disableScrollPropagation(div);
         return div;
     };
     painel.addTo(mapa);
+    painel.getContainer().style.display = ativo ? "" : "none";
+
+    // Usado pelo alternador de visualizações do mapa.
+    window.camadasAgrupadas = window.camadasAgrupadas || {};
+    window.camadasAgrupadas[D.id] = {
+        depurar: depurar,
+        mostrar: function () {
+            ativo = true; zoomando = false;
+            canvas.style.display = "";
+            canvas.style.transition = "none";
+            canvas.style.opacity = "1";
+            painel.getContainer().style.display = "";
+            desenhar();
+        },
+        ocultar: function () {
+            ativo = false;
+            fecharDica();
+            hx = []; hy = []; hr = []; hk = [];
+            canvas.style.display = "none";
+            painel.getContainer().style.display = "none";
+        }
+    };
 
     // Durante a animação de zoom os pontos ficariam parados enquanto o mapa
     // de fundo se move. Então eles somem quando o zoom começa e voltam,
     // já na posição certa, quando termina.
     mapa.on("zoomstart", function () {
+        if (!ativo) { return; }
         zoomando = true;
         fecharDica();
         canvas.style.transition = "none";
@@ -450,6 +449,7 @@ SCRIPT_SINALIZACAO = """
     });
     mapa.on("zoomend", function () {
         zoomando = false;
+        if (!ativo) { return; }
         desenhar();
         requestAnimationFrame(function () {
             canvas.style.transition = "opacity 0.18s ease-out";
@@ -465,17 +465,91 @@ SCRIPT_SINALIZACAO = """
 """
 
 
-class CamadaSinalizacao(MacroElement):
-    _template = Template(SCRIPT_SINALIZACAO)
+class CamadaAgrupada(MacroElement):
+    _template = Template(SCRIPT_AGRUPADA)
 
-    def __init__(self, dados):
+    def __init__(self, dados, ativo=True):
         super().__init__()
-        self._name = "CamadaSinalizacao"
+        self._name = "CamadaAgrupada"
+        self.ativo = ativo
         self.dados = json.dumps(
             dados,
             ensure_ascii=False,
             separators=(",", ":"),
         ).replace("</", "<\\/")
+
+
+# Alterna entre as visualizações dentro do próprio mapa, no navegador. Assim a
+# troca não reexecuta o app nem recria o mapa (o que fazia a tela piscar e
+# voltar ao início); a posição e o zoom se mantêm entre as visualizações.
+SCRIPT_VISTAS = """
+{% macro script(this, kwargs) %}
+(function () {
+    var mapa = {{ this._parent.get_name() }};
+    var calor = {{ this.nome_calor }};
+    var VISTAS = { "Pontos": "acidentes", "Mapa de calor": null, "Sinalização": "sinalizacao" };
+    var atual = "Pontos";
+
+    function camada(vista) {
+        var id = VISTAS[vista];
+        return id && window.camadasAgrupadas ? window.camadasAgrupadas[id] : null;
+    }
+    function sair(vista) {
+        if (vista === "Mapa de calor") {
+            if (calor) { mapa.removeLayer(calor); }
+        } else if (camada(vista)) {
+            camada(vista).ocultar();
+        }
+    }
+    function entrar(vista) {
+        if (vista === "Mapa de calor") {
+            if (calor) { mapa.addLayer(calor); }
+        } else if (camada(vista)) {
+            camada(vista).mostrar();
+        }
+        mapa.getContainer().classList.toggle("fundo-colorido", vista === "Mapa de calor");
+    }
+    function ir(vista) {
+        if (vista === atual) { return; }
+        sair(atual);
+        atual = vista;
+        entrar(vista);
+    }
+    window.vistaAtual = function () { return atual; };
+
+    var painel = L.control({ position: "topleft" });
+    painel.onAdd = function () {
+        var div = L.DomUtil.create("div", "painel-vistas");
+        div.style.cssText = "background:rgba(255,255,255,0.96);color:#222;padding:8px 12px;" +
+            "border-radius:6px;box-shadow:0 1px 5px rgba(0,0,0,0.4);font:13px/1.6 sans-serif;";
+        var titulo = L.DomUtil.create("div", "", div);
+        titulo.style.cssText = "font-weight:700;margin-bottom:2px;";
+        titulo.textContent = "Visualização";
+        Object.keys(VISTAS).forEach(function (nome) {
+            var linha = L.DomUtil.create("label", "", div);
+            linha.style.cssText = "display:flex;align-items:center;gap:6px;cursor:pointer;";
+            var radio = L.DomUtil.create("input", "", linha);
+            radio.type = "radio"; radio.name = "vista-mapa"; radio.checked = (nome === atual);
+            radio.addEventListener("change", function () { if (radio.checked) { ir(nome); } });
+            var texto = L.DomUtil.create("span", "", linha);
+            texto.textContent = nome;
+        });
+        L.DomEvent.disableClickPropagation(div);
+        return div;
+    };
+    painel.addTo(mapa);
+})();
+{% endmacro %}
+"""
+
+
+class AlternadorVistas(MacroElement):
+    _template = Template(SCRIPT_VISTAS)
+
+    def __init__(self, calor=None):
+        super().__init__()
+        self._name = "AlternadorVistas"
+        self.nome_calor = calor.get_name() if calor is not None else "null"
 
 
 def pontos_em_porto_alegre(df):
@@ -484,64 +558,6 @@ def pontos_em_porto_alegre(df):
         dados["latitude"].between(*LIMITES_LATITUDE)
         & dados["longitude"].between(*LIMITES_LONGITUDE)
     ]
-
-
-def _texto_acidente(df):
-    hora = df["hora"].astype("string").str[:5].fillna("--:--")
-    data = df["data"].dt.strftime("%d/%m/%Y").fillna("sem data")
-    tipo = df["tipo_acid"].astype("string").fillna("Tipo não informado")
-    rua = df["log1"].astype("string").fillna("Local não informado")
-
-    return [
-        (
-            f"<b>{html.escape(t)}</b><br>{d} às {h}<br>{html.escape(r)}<br>"
-            f"Feridos: {int(fe)} (graves: {int(fg)}) · Mortes: {int(mo)}"
-        )
-        for t, d, h, r, fe, fg, mo in zip(
-            tipo,
-            data,
-            hora,
-            rua,
-            df["feridos"].fillna(0),
-            df["feridos_gr"].fillna(0),
-            df["mortes"].fillna(0),
-        )
-    ]
-
-
-def _bolinha(cor, tamanho, borda="none", sombra="none", opacidade=1):
-    return (
-        f'<span style="display:inline-block; width:{tamanho}px; '
-        f'height:{tamanho}px; border-radius:50%; background:{cor}; '
-        f'border:{borda}; box-shadow:{sombra}; opacity:{opacidade}; '
-        'vertical-align:middle;"></span>'
-    )
-
-
-BOLINHA_GRAVE = _bolinha(COR_GRAVE, 14, "1px solid #fff", "0 0 0 1px #888")
-BOLINHA_DEMAIS = _bolinha(COR_DEMAIS, 14, "1px solid #fff", "0 0 0 1px #888")
-
-
-def _legenda(graves, demais):
-    def inteiro(valor):
-        return f"{valor:,}".replace(",", ".")
-
-    return f"""
-    <div style="position: fixed; bottom: 28px; left: 12px; z-index: 9999;
-                background: rgba(255,255,255,0.95); color: #222;
-                padding: 10px 14px; border-radius: 6px; font-size: 13px;
-                box-shadow: 0 1px 5px rgba(0,0,0,0.4); line-height: 1.5;">
-      <div style="font-weight: 700; margin-bottom: 6px;">Tipo de acidente</div>
-      <div style="margin-bottom: 4px;">{BOLINHA_GRAVE}
-          <b style="color:{COR_GRAVE};">Vermelho</b> — grave
-          <b>({inteiro(graves)})</b></div>
-      <div style="font-size: 11px; color:#666; margin: 0 0 6px 22px;">
-          com feridos graves ou mortes</div>
-      <div>{BOLINHA_DEMAIS}
-          <b style="color:{COR_DEMAIS};">Azul</b> — demais acidentes
-          <b>({inteiro(demais)})</b></div>
-    </div>
-    """
 
 
 def _base_mapa():
@@ -556,64 +572,82 @@ def _base_mapa():
     mapa.get_root().header.add_child(folium.Element(
         "<style>.leaflet-tile-pane {"
         "filter: grayscale(1) brightness(1.08) contrast(0.85);}"
-        ".leaflet-control-layers {font-size: 13px;}"
+        ".fundo-colorido .leaflet-tile-pane {filter: none;}"
         ".dica-sinais {white-space: normal; width: max-content; max-width: 320px;"
         "box-shadow: 0 1px 6px rgba(0,0,0,0.45);}</style>"
     ))
     return mapa
 
 
-def mapa_pontos(df):
-    mapa = _base_mapa()
+def _dados_acidentes(acidentes):
+    pontos = pontos_em_porto_alegre(acidentes)
+    grave = pontos["acidente_grave"].astype(int)
 
-    pontos = pontos_em_porto_alegre(df)
-    graves = pontos[pontos["acidente_grave"]]
-    demais = pontos[~pontos["acidente_grave"]]
-
-    CamadaPontos(
-        demais[["latitude", "longitude"]].round(5).values.tolist(),
-        {
-            "radius": 2,
-            "stroke": False,
-            "fillColor": COR_DEMAIS,
-            "fillOpacity": 0.4,
-        },
-        name=f"{BOLINHA_DEMAIS} Demais acidentes",
-        raio_min=1.3,
-        raio_max=4,
-    ).add_to(mapa)
-
-    textos = _texto_acidente(graves)
-    CamadaPontos(
-        [
-            [lat, lon, texto]
-            for (lat, lon), texto in zip(
-                graves[["latitude", "longitude"]].round(5).values.tolist(),
-                textos,
-            )
-        ],
-        {
-            "radius": 3,
-            "color": "#ffffff",
-            "weight": 0.6,
-            "fillColor": COR_GRAVE,
-            "fillOpacity": 0.85,
-        },
-        name=f"{BOLINHA_GRAVE} Acidentes graves",
-        raio_min=2.2,
-        raio_max=8,
-    ).add_to(mapa)
-
-    folium.LayerControl(collapsed=False).add_to(mapa)
-    mapa.get_root().html.add_child(
-        folium.Element(_legenda(len(graves), len(demais)))
+    tipos, nomes_tipos = pd.factorize(
+        pontos["tipo_acid"].astype("string").fillna("Tipo não informado")
     )
-    return mapa
+    datas, nomes_datas = pd.factorize(
+        pontos["data"].dt.strftime("%d/%m/%Y").fillna("sem data")
+    )
+    horas, nomes_horas = pd.factorize(
+        pontos["hora"].astype("string").str[:5].fillna("--:--")
+    )
+    ruas, nomes_ruas = pd.factorize(
+        pontos["log1"].astype("string").fillna("Local não informado")
+    )
+
+    def inteiros(coluna):
+        return pontos[coluna].fillna(0).astype(int).tolist()
+
+    # Os "demais" vêm primeiro e os graves por último: ficam desenhados por
+    # cima e, sendo maiores, continuam visíveis em meio aos demais.
+    return {
+        "id": "acidentes",
+        "modo": "acidentes",
+        "titulo": "Tipo de acidente",
+        "unidade": "acidentes",
+        "rotulo_tipos": "tipos",
+        "rotulo_agrupar": "Agrupar acidentes próximos",
+        "nota": NOTA_AGRUPAMENTO.replace("Itens", "Acidentes").replace(
+            "de itens", "de acidentes"
+        ),
+        "lat": pontos["latitude"].round(5).tolist(),
+        "lon": pontos["longitude"].round(5).tolist(),
+        "cat": grave.tolist(),
+        "d": tipos.tolist(),
+        "dt": datas.tolist(),
+        "hh": horas.tolist(),
+        "rr": ruas.tolist(),
+        "fe": inteiros("feridos"),
+        "fg": inteiros("feridos_gr"),
+        "mo": inteiros("mortes"),
+        "cats": [
+            {
+                "nome": "Demais acidentes",
+                "cor": COR_DEMAIS,
+                "forma": "circulo",
+                "n": int((grave == 0).sum()),
+                "escala": 0.75,
+                "alfa": 0.5,
+            },
+            {
+                "nome": "Acidentes graves",
+                "cor": COR_GRAVE,
+                "forma": "circulo",
+                "n": int((grave == 1).sum()),
+                "escala": 1.3,
+                "alfa": 0.9,
+                "ajuda": "com feridos graves ou mortes",
+            },
+        ],
+        "descr": [html.escape(str(n)) for n in nomes_tipos],
+        "datas": [str(n) for n in nomes_datas],
+        "horas": [str(n) for n in nomes_horas],
+        "ruas": [html.escape(str(n)) for n in nomes_ruas],
+    }
 
 
-def mapa_sinalizacao(sinalizacao):
-    mapa = _base_mapa()
-
+def _dados_sinalizacao(sinalizacao):
     sinais = pontos_em_porto_alegre(sinalizacao)
     contagens = sinais["categoria"].value_counts()
     ordem = list(contagens.index)
@@ -622,7 +656,16 @@ def mapa_sinalizacao(sinalizacao):
         sinais["descricao"].astype("string").fillna("Sem descrição")
     )
 
-    dados = {
+    return {
+        "id": "sinalizacao",
+        "modo": "sinalizacao",
+        "titulo": "Tipo de sinalização",
+        "unidade": "sinais",
+        "rotulo_tipos": "descrições",
+        "rotulo_agrupar": "Agrupar sinais próximos",
+        "nota": NOTA_AGRUPAMENTO.replace("Itens", "Sinais").replace(
+            "de itens", "de sinais"
+        ),
         "lat": sinais["latitude"].round(5).tolist(),
         "lon": sinais["longitude"].round(5).tolist(),
         "cat": codigos.astype(int).tolist(),
@@ -640,24 +683,30 @@ def mapa_sinalizacao(sinalizacao):
         "descr": [html.escape(str(n)) for n in nomes],
     }
 
-    CamadaSinalizacao(dados).add_to(mapa)
-    return mapa
 
+def mapa_vistas(acidentes, sinalizacao):
+    """Um único mapa com as três visualizações.
 
-def mapa_calor(df):
-    mapa = folium.Map(
-        location=CENTRO_MAPA,
-        zoom_start=ZOOM_MAPA,
-        tiles="OpenStreetMap",
-    )
+    A troca entre elas acontece no navegador (painel "Visualização" dentro do
+    mapa), sem reexecutar o app: não há piscada e a posição é mantida.
+    """
+    mapa = _base_mapa()
 
-    pontos = pontos_em_porto_alegre(df)
+    CamadaAgrupada(_dados_acidentes(acidentes), ativo=True).add_to(mapa)
+    CamadaAgrupada(_dados_sinalizacao(sinalizacao), ativo=False).add_to(mapa)
+
+    pontos = pontos_em_porto_alegre(acidentes)
+    calor = None
     if not pontos.empty:
-        HeatMap(
+        calor = HeatMap(
             pontos[["latitude", "longitude"]].values.tolist(),
             radius=12,
             blur=18,
             min_opacity=0.4,
+            show=False,
+            control=False,
+            name="Mapa de calor",
         ).add_to(mapa)
 
+    AlternadorVistas(calor).add_to(mapa)
     return mapa
