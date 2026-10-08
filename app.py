@@ -59,18 +59,20 @@ def carregar_dados():
     return tratados
 
 
-@st.cache_data
+# Com o raio de 1 em 1 m há até 301 resultados possíveis: o limite de entradas
+# evita que a memória cresça se o usuário percorrer muitos valores.
+@st.cache_data(max_entries=20)
 def calcular_relacao(_acidentes, _sinalizacao, raio):
     # Os dados são fixos na sessão: só o raio entra na chave do cache.
     return relacao.calcular_relacao(_acidentes, _sinalizacao, raio)
 
 
-@st.cache_data
+@st.cache_data(max_entries=200)
 def calcular_antes_depois(_acidentes, _sinalizacao, categoria, raio, meses):
     return relacao.antes_depois(_acidentes, _sinalizacao, categoria, raio, meses)
 
 
-@st.cache_resource
+@st.cache_resource(max_entries=5)
 def montar_mapa_graves(_graves, _grupos, raio, anos):
     return mapas.mapa_graves_sinalizacao(_graves, _grupos, raio)
 
@@ -113,15 +115,32 @@ anos_selecionados = st.sidebar.multiselect(
 
 raio_sinalizacao = st.sidebar.slider(
     "Raio da sinalização (m)",
-    min_value=25,
+    min_value=0,
     max_value=300,
     value=100,
-    step=25,
+    step=1,
     help=(
         "Distância em volta de cada acidente usada para contar os sinais "
-        "próximos. Vale só para a aba Sinalização × Acidentes."
+        "próximos. Vale só para a aba Sinalização × Acidentes. Com 0, só "
+        "contam os sinais no mesmo ponto do acidente."
     ),
 )
+
+with st.sidebar:
+    # Escala visual do raio: o círculo tem o tamanho real em metros. O centro
+    # e o zoom mudam com o raio para o componente reposicionar o mapa.
+    st_folium(
+        mapas.mapa_referencia_raio(raio_sinalizacao),
+        width=None,
+        height=220,
+        key="mapa_raio",
+        center=mapas.MERCADO_PUBLICO,
+        zoom=mapas.zoom_para_raio(raio_sinalizacao),
+        returned_objects=[],
+    )
+    st.caption(
+        "Escala do raio, em volta do Mercado Público de Porto Alegre."
+    )
 
 apenas_graves = st.sidebar.checkbox(
     "Mostrar somente acidentes graves"

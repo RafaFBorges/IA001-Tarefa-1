@@ -1,4 +1,5 @@
 import html
+import math
 import json
 
 import folium
@@ -839,4 +840,47 @@ def mapa_pontos_criticos(pontos, raio):
             ],
             padding=(30, 30),
         )
+    return mapa
+
+
+# Referência de escala para o raio da sinalização: o Mercado Público Central
+# (coordenadas aproximadas, no Largo Glênio Peres).
+MERCADO_PUBLICO = [-30.0285, -51.2277]
+
+
+def zoom_para_raio(raio, largura_px=230):
+    """Maior zoom inteiro em que um círculo de `raio` metros ainda cabe na
+    largura do mapa, com folga. Sem raio, aproxima bastante."""
+    if raio <= 0:
+        return 17
+    metros_por_pixel = raio * 2 * 1.5 / largura_px
+    zoom = math.log2(156543.03 * math.cos(math.radians(MERCADO_PUBLICO[0])) / metros_por_pixel)
+    return int(max(14, min(18, math.floor(zoom))))
+
+
+def mapa_referencia_raio(raio):
+    """Mapa pequeno com o Mercado Público e um círculo do tamanho do raio."""
+    mapa = folium.Map(
+        location=MERCADO_PUBLICO,
+        zoom_start=zoom_para_raio(raio),
+        tiles="OpenStreetMap",
+        zoom_control=False,
+        attribution_control=False,
+    )
+    folium.Marker(
+        MERCADO_PUBLICO,
+        tooltip="Mercado Público de Porto Alegre",
+        icon=folium.Icon(color="red", icon="shopping-cart", prefix="fa"),
+    ).add_to(mapa)
+    if raio > 0:
+        folium.Circle(
+            MERCADO_PUBLICO,
+            radius=raio,
+            color="#2b6cb0",
+            weight=2,
+            fill=True,
+            fill_color="#2b6cb0",
+            fill_opacity=0.18,
+            tooltip=f"Raio de {raio} m",
+        ).add_to(mapa)
     return mapa

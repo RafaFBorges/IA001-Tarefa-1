@@ -452,7 +452,8 @@ def efeito_relativo(resumo, graves=False):
         ("razao_graves", "log_erro_graves") if graves else ("razao", "log_erro")
     )
     tratado, controle = por_grupo.loc[GRUPO_TRATADO], por_grupo.loc[GRUPO_CONTROLE]
-    razao = tratado[razao_col] / controle[razao_col]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        razao = tratado[razao_col] / controle[razao_col]
     erro = np.sqrt(tratado[erro_col] ** 2 + controle[erro_col] ** 2)
     if not np.isfinite(razao) or not np.isfinite(erro):
         return None
