@@ -951,3 +951,123 @@ def grafico_graves_antes_depois(resumo):
     )
     barras, erros = _barras_com_erro(base, "Acidentes graves (%)", _cor_periodo())
     return alt.layer(barras, erros).properties(height=300)
+
+
+# ---------- horário × sinalização ----------
+
+COR_DIA = "#f2a900"
+COR_NOITE = "#3b4a8c"
+PERIODOS = {"DIA": "Dia", "NOITE": "Noite"}
+
+
+def _com_periodo(df):
+    df = df.assign(
+        periodo=df["noite_dia"].astype("string").str.strip().str.upper().map(PERIODOS)
+    )
+    return df.dropna(subset=["periodo"])
+
+
+def _cor_dia_noite():
+    return alt.Color(
+        "periodo:N",
+        title=None,
+        sort=["Dia", "Noite"],
+        scale=alt.Scale(domain=["Dia", "Noite"], range=[COR_DIA, COR_NOITE]),
+        legend=alt.Legend(orient="top"),
+    )
+
+
+def dados_graves_horario(df):
+    """Proporção de graves, de dia e de noite, por grupo de densidade de
+    marcações horizontais e de sinais verticais (grupos de cada tipo)."""
+    import relacao_espacial as relacao
+
+    df = _com_periodo(df)
+    tabelas = []
+    for rotulo, coluna in (
+        (relacao.ROTULO_HORIZONTAL, "n_horizontal"),
+        (relacao.ROTULO_VERTICAL, "n_vertical"),
+    ):
+        grupos = relacao.grupos_densidade(df[coluna])
+        parte = df.assign(grupo=grupos)
+        tabela = relacao.proporcao_graves(parte, ["grupo", "periodo"])
+        ordem = {g: i for i, g in enumerate(grupos.cat.categories)}
+        tabela["ordem"] = tabela["grupo"].map(ordem).astype(int)
+        tabela["grupo"] = tabela["grupo"].astype(str)
+        tabela["tipo"] = rotulo
+        tabelas.append(tabela)
+    return pd.concat(tabelas, ignore_index=True)
+
+
+def grafico_graves_horario(dados, raio):
+    ordem_tipos = list(dict.fromkeys(dados["tipo"]))
+    base = alt.Chart(dados).encode(
+        x=alt.X(
+            "grupo:N",
+            sort=alt.EncodingSortField("ordem", op="min"),
+            title=f"Sinais do tipo em até {raio} m do acidente",
+            axis=alt.Axis(labelAngle=0),
+        ),
+        xOffset=alt.XOffset("periodo:N", sort=["Dia", "Noite"]),
+        tooltip=[
+            alt.Tooltip("periodo:N", title="Período"),
+            alt.Tooltip("grupo:N", title="Sinais no raio"),
+            *_tooltip_metricas(),
+        ],
+    )
+    barras, erros = _barras_com_erro(base, "Acidentes graves (%)", _cor_dia_noite())
+    return (
+        alt.layer(barras, erros)
+        .properties(width=240, height=260)
+        .facet(
+            facet=alt.Facet("tipo:N", sort=ordem_tipos, title=None),
+            columns=2,
+        )
+        .resolve_scale(x="independent")
+    )
+
+
+def dados_marcacao_e_placa(df):
+    """Combina marcações horizontais (muitas ou poucas) e sinais verticais
+    (muitos ou poucos), cortando cada um na mediana, para separar o efeito de
+    um do outro."""
+    import relacao_espacial as relacao
+
+    df = _com_periodo(df)
+    muitas_marcacoes = df["n_horizontal"] > df["n_horizontal"].median()
+    muitas_placas = df["n_vertical"] > df["n_vertical"].median()
+    rotulos = {
+        (False, False): "Poucas marcações · poucas placas",
+        (True, False): "Muitas marcações · poucas placas",
+        (False, True): "Poucas marcações · muitas placas",
+        (True, True): "Muitas marcações · muitas placas",
+    }
+    df = df.assign(
+        grupo=[rotulos[c] for c in zip(muitas_marcacoes, muitas_placas)]
+    )
+    tabela = relacao.proporcao_graves(df, ["grupo", "periodo"])
+    tabela["ordem"] = tabela["grupo"].map({g: i for i, g in enumerate(rotulos.values())})
+    return tabela.sort_values(["ordem", "periodo"]).reset_index(drop=True)
+
+
+def grafico_marcacao_e_placa(dados):
+    base = alt.Chart(dados).encode(
+        y=alt.Y(
+            "grupo:N",
+            sort=alt.EncodingSortField("ordem", op="min"),
+            title=None,
+            axis=alt.Axis(labelLimit=260),
+        ),
+        yOffset=alt.YOffset("periodo:N", sort=["Dia", "Noite"]),
+        tooltip=[
+            alt.Tooltip("periodo:N", title="Período"),
+            alt.Tooltip("grupo:N", title="Grupo"),
+            *_tooltip_metricas(),
+        ],
+    )
+    barras = base.mark_bar().encode(
+        x=alt.X("pct:Q", title="Acidentes graves (%)", scale=alt.Scale(domainMin=0)),
+        color=_cor_dia_noite(),
+    )
+    erros = base.mark_rule(color=COR_VALOR).encode(x="inferior:Q", x2="superior:Q")
+    return alt.layer(barras, erros).properties(height=260)

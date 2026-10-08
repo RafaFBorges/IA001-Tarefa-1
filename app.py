@@ -495,6 +495,72 @@ def secao_pareamento(dados, raio):
 
 
 @st.fragment
+def secao_horario(dados, raio):
+    st.divider()
+    st.subheader("Horário e sinalização horizontal")
+    dados = dados.assign(
+        periodo=dados["noite_dia"].astype("string").str.strip().str.upper()
+    )
+    dados = dados[dados["periodo"].isin(["DIA", "NOITE"])]
+    if dados.empty:
+        st.info("Nenhum acidente com horário informado para os filtros selecionados.")
+        return
+
+    st.caption(
+        "As marcações no pavimento dependem da visibilidade à noite; as placas "
+        "são refletivas. O cadastro não diz se o sinal é horizontal ou "
+        "vertical, então usei o local de instalação: sinais no leito da via "
+        "são marcações (faixas, divisão de pista, setas pintadas, tachões); "
+        "sinais na calçada, no canteiro ou sobre a rua são placas e "
+        "equipamentos (abrigos, gradis). Segue o filtro de ano."
+    )
+
+    noite = dados["periodo"].eq("NOITE")
+    colunas = st.columns(3)
+    colunas[0].metric(
+        "Acidentes à noite",
+        graficos.formatar_percentual(noite.mean() * 100),
+        border=True,
+    )
+    colunas[1].metric(
+        "Graves de dia (%)",
+        graficos.formatar_percentual(dados.loc[~noite, "acidente_grave"].mean() * 100),
+        border=True,
+    )
+    colunas[2].metric(
+        "Graves à noite (%)",
+        graficos.formatar_percentual(dados.loc[noite, "acidente_grave"].mean() * 100),
+        border=True,
+    )
+
+    st.subheader("Mais sinais ao redor reduzem a gravidade de dia e de noite?")
+    st.caption(
+        "Proporção de acidentes graves por grupo de densidade, de dia e de "
+        "noite, para cada tipo de sinal. Se as marcações importassem mais à "
+        "noite, a queda seria maior nas barras da noite. Barras de erro: "
+        "intervalo de confiança de 95%. Grupos com menos de "
+        f"{relacao.MINIMO_REGISTROS} acidentes são omitidos."
+    )
+    st.altair_chart(
+        graficos.grafico_graves_horario(
+            graficos.dados_graves_horario(dados), raio
+        ),
+        width="content",
+    )
+
+    st.subheader("Marcações e placas separadas")
+    st.caption(
+        "As marcações e as placas aparecem juntas (as contagens se "
+        "correlacionam bastante), o que dificulta separar o efeito de cada "
+        "uma. Aqui cada tipo é cortado na mediana (muitos ou poucos) e os "
+        "quatro cruzamentos são comparados, de dia e de noite."
+    )
+    mostrar_grafico(
+        graficos.grafico_marcacao_e_placa(graficos.dados_marcacao_e_placa(dados))
+    )
+
+
+@st.fragment
 def secao_antes_depois(raio):
     st.divider()
     st.subheader("Os acidentes mudam depois que o sinal entra?")
@@ -755,6 +821,8 @@ with aba_relacao:
                 mostrar_grafico(
                     graficos.grafico_graves_por_distancia(graves_distancia)
                 )
+
+            secao_horario(dados_relacao, raio_sinalizacao)
 
             secao_antes_depois(raio_sinalizacao)
 
