@@ -588,3 +588,203 @@ def grafico_distribuicao(serie, rotulo_x, cor=COR_NEUTRA):
         grafico_histograma(serie, rotulo_x, cor),
         grafico_boxplot(serie, rotulo_x),
     ).resolve_scale(x="shared")
+
+
+# ---------- sinalização × acidentes ----------
+
+TIPOS_COMPARADOS = ["COLISÃO", "ABALROAMENTO", "CHOQUE", "ATROPELAMENTO"]
+ROTULO_TODOS_TIPOS = "Todos os tipos"
+COR_COM_SINAL = "#2ca25f"
+COR_SEM_SINAL = "#e45756"
+
+
+def _barras_com_erro(base, y_titulo, cor):
+    """Barras de percentual com a barra de erro do intervalo de confiança.
+    `cor` é uma cor fixa ou um encoding de cor do Altair."""
+    if isinstance(cor, str):
+        barras = base.mark_bar(color=cor)
+    else:
+        barras = base.mark_bar().encode(color=cor)
+    barras = barras.encode(
+        y=alt.Y("pct:Q", title=y_titulo, scale=alt.Scale(domainMin=0)),
+    )
+    erros = base.mark_rule(color=COR_VALOR).encode(
+        y="inferior:Q", y2="superior:Q"
+    )
+    return barras, erros
+
+
+def _tooltip_metricas():
+    return [
+        alt.Tooltip("n:Q", title="Acidentes", format=",.0f"),
+        alt.Tooltip("graves:Q", title="Graves", format=",.0f"),
+        alt.Tooltip("pct:Q", title="Graves (%)", format=".1f"),
+        alt.Tooltip("inferior:Q", title="IC 95% inferior (%)", format=".1f"),
+        alt.Tooltip("superior:Q", title="IC 95% superior (%)", format=".1f"),
+    ]
+
+
+def dados_graves_por_densidade(df):
+    """Proporção de graves por grupo de densidade de sinais, para todos os
+    tipos juntos e para cada tipo de acidente. Os grupos são definidos uma
+    vez com todos os acidentes, para ficarem comparáveis entre os tipos."""
+    import relacao_espacial as relacao
+
+    df = df.assign(grupo=relacao.grupos_densidade(df["n_sinais"]))
+    conjuntos = {ROTULO_TODOS_TIPOS: df}
+    for tipo in TIPOS_COMPARADOS:
+        conjuntos[tipo.capitalize()] = df[df["tipo_acid"].eq(tipo)]
+
+    tabelas = []
+    for nome, conjunto in conjuntos.items():
+        if conjunto.empty:
+            continue
+        tabela = relacao.proporcao_graves(conjunto, "grupo")
+        tabela["tipo"] = nome
+        tabelas.append(tabela)
+
+    if not tabelas:
+        return pd.DataFrame()
+    dados = pd.concat(tabelas, ignore_index=True)
+    dados["grupo"] = dados["grupo"].astype(str)
+    return dados
+
+
+def grafico_graves_por_densidade(dados, raio):
+    ordem_grupos = list(dict.fromkeys(dados["grupo"]))
+    ordem_tipos = list(dict.fromkeys(dados["tipo"]))
+
+    base = alt.Chart(dados).encode(
+        x=alt.X(
+            "grupo:N",
+            sort=ordem_grupos,
+            title=f"Sinais em até {raio} m do acidente",
+            axis=alt.Axis(labelAngle=0),
+        ),
+        tooltip=[alt.Tooltip("grupo:N", title="Sinais no raio"), *_tooltip_metricas()],
+    )
+    barras, erros = _barras_com_erro(base, "Acidentes graves (%)", COR_NEUTRA)
+
+    return (
+        alt.layer(barras, erros)
+        .properties(width=150, height=170)
+        .facet(
+            facet=alt.Facet("tipo:N", sort=ordem_tipos, title=None),
+            columns=3,
+        )
+        .resolve_scale(y="shared")
+    )
+
+
+def dados_pareamento(df, selecao, categoria):
+    """Proporção de graves com e sem sinais da categoria no raio, no total
+    e dentro de cada grupo de densidade (para separar o efeito da
+    quantidade geral de sinais)."""
+    import relacao_espacial as relacao
+
+    df = df[selecao].copy()
+    if df.empty:
+        return pd.DataFrame()
+
+    df["grupo"] = relacao.grupos_densidade(df["n_sinais"]).astype(str)
+    df["situacao"] = df[relacao.PREFIXO_PERTO + categoria].map(
+        {True: "Com sinal por perto", False: "Sem sinal por perto"}
+    )
+
+    tabelas = []
+    todos = relacao.proporcao_graves(df, "situacao")
+    todos["grupo"] = "Todos"
+    tabelas.append(todos)
+    for grupo, conjunto in df.groupby("grupo", sort=False):
+        tabela = relacao.proporcao_graves(conjunto, "situacao")
+        tabela["grupo"] = grupo
+        tabelas.append(tabela)
+
+    dados = pd.concat(tabelas, ignore_index=True)
+    ordem = ["Todos"] + sorted(
+        (g for g in dados["grupo"].unique() if g != "Todos"),
+        key=lambda g: int(g.split("–")[0]),
+    )
+    dados["grupo"] = pd.Categorical(dados["grupo"], categories=ordem, ordered=True)
+    return dados.sort_values("grupo").reset_index(drop=True)
+
+
+def grafico_pareamento(dados, categoria, raio):
+    ordem_grupos = list(dados["grupo"].cat.categories)
+    cor = alt.Color(
+        "situacao:N",
+        title=None,
+        scale=alt.Scale(
+            domain=["Com sinal por perto", "Sem sinal por perto"],
+            range=[COR_COM_SINAL, COR_SEM_SINAL],
+        ),
+        legend=alt.Legend(orient="top"),
+    )
+    base = alt.Chart(dados).encode(
+        x=alt.X(
+            "grupo:N",
+            sort=ordem_grupos,
+            title=f"Sinais de qualquer tipo em até {raio} m (grupos de densidade)",
+            axis=alt.Axis(labelAngle=0),
+        ),
+        xOffset=alt.XOffset("situacao:N", sort=["Com sinal por perto", "Sem sinal por perto"]),
+        tooltip=[
+            alt.Tooltip("situacao:N", title=f"{categoria} em {raio} m"),
+            alt.Tooltip("grupo:N", title="Sinais no raio"),
+            *_tooltip_metricas(),
+        ],
+    )
+    barras, erros = _barras_com_erro(base, "Acidentes graves (%)", cor)
+    return alt.layer(barras, erros).properties(height=300)
+
+
+def dados_distancia(df):
+    import relacao_espacial as relacao
+
+    df = df.assign(faixa=relacao.faixas_distancia(df["dist_sinal"]))
+    contagem = (
+        df.groupby("faixa", observed=False)
+        .size()
+        .rename("n")
+        .reset_index()
+    )
+    contagem["faixa"] = contagem["faixa"].astype(str)
+    proporcao = relacao.proporcao_graves(df, "faixa")
+    proporcao["faixa"] = proporcao["faixa"].astype(str)
+    return contagem, proporcao
+
+
+def grafico_histograma_distancia(contagem):
+    return (
+        alt.Chart(contagem)
+        .mark_bar(color=COR_NEUTRA)
+        .encode(
+            x=alt.X(
+                "faixa:N",
+                sort=list(contagem["faixa"]),
+                title="Distância ao sinal mais próximo (m)",
+                axis=alt.Axis(labelAngle=0),
+            ),
+            y=alt.Y("n:Q", title="Acidentes", scale=alt.Scale(type="sqrt")),
+            tooltip=[
+                alt.Tooltip("faixa:N", title="Distância (m)"),
+                alt.Tooltip("n:Q", title="Acidentes", format=",.0f"),
+            ],
+        )
+        .properties(height=300)
+    )
+
+
+def grafico_graves_por_distancia(proporcao):
+    ordem = list(proporcao["faixa"])
+    base = alt.Chart(proporcao).encode(
+        x=alt.X(
+            "faixa:N",
+            sort=ordem,
+            title="Distância ao sinal mais próximo (m)",
+            axis=alt.Axis(labelAngle=0),
+        ),
+        tooltip=[alt.Tooltip("faixa:N", title="Distância (m)"), *_tooltip_metricas()],
+    )
+    barras, erros = _barras_com_erro(base, "Acidentes graves (%)", COR_NEUTRA)
+    return alt.layer(barras, erros).properties(height=300)

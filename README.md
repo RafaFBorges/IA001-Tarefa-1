@@ -11,7 +11,8 @@ A aplicação permite analisar:
 - quantidade de feridos e mortes;
 - distribuição dos acidentes por tipo;
 - concentração espacial das ocorrências;
-- dados filtrados por período e gravidade.
+- dados filtrados por período e gravidade;
+- relação espacial entre acidentes e sinalização gráfica (aba "Sinalização × Acidentes"), com raio ajustável na barra lateral.
 
 ## Estrutura do projeto
 
@@ -100,9 +101,9 @@ Um acidente foi considerado grave quando possuía pelo menos um ferido grave ou 
 
 ## Limitações
 
-A aplicação utiliza principalmente a tabela de acidentes. Apesar de as bases de vítimas e sinalização gráfica terem sido analisadas no notebook, elas ainda não são cruzadas diretamente no dashboard.
+A base de vítimas ainda não é cruzada com os acidentes no dashboard. A sinalização é cruzada com os acidentes por proximidade (coordenadas), mas o cadastro traz apenas os sinais em vigor na data da extração e não há dados de fluxo e velocidade das vias.
 
-Portanto, a aplicação não permite concluir que determinado tipo de sinalização causa ou evita acidentes. Os resultados são exploratórios e dependem da qualidade e da cobertura dos registros disponibilizados pela EPTC.
+Portanto, a aplicação não permite concluir que determinado tipo de sinalização causa ou evita acidentes: as comparações são associações. Os resultados são exploratórios e dependem da qualidade e da cobertura dos registros disponibilizados pela EPTC.
 
 ## Tecnologias utilizadas
 
@@ -111,6 +112,7 @@ Portanto, a aplicação não permite concluir que determinado tipo de sinalizaç
 - Streamlit
 - Folium
 - Streamlit-Folium
+- SciPy (busca espacial dos sinais próximos a cada acidente)
 
 ## Autoria
 

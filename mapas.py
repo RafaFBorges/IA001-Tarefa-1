@@ -737,3 +737,63 @@ def mapa_vistas(acidentes, sinalizacao):
 
     AlternadorVistas(calor).add_to(mapa)
     return mapa
+
+
+# Do grupo com menos sinais (claro) ao com mais sinais (escuro).
+CORES_DENSIDADE = ["#fde725", "#5ec962", "#21918c", "#3b528b", "#440154"]
+
+
+def mapa_graves_sinalizacao(graves, grupos, raio):
+    """Acidentes graves coloridos pelo grupo de densidade de sinais no raio.
+
+    `graves` traz as colunas da relação espacial (dist_sinal, n_sinais) e
+    `grupos` é o rótulo do grupo de cada acidente, na mesma ordem.
+    """
+    mapa = _base_mapa()
+    pontos = pontos_em_porto_alegre(graves)
+    grupos = grupos.loc[pontos.index]
+    ordem = list(grupos.cat.categories)
+    cores = dict(zip(ordem, CORES_DENSIDADE[-len(ordem):]))
+
+    camada = folium.FeatureGroup(name="Acidentes graves").add_to(mapa)
+    # Os grupos com menos sinais ficam por cima: são os que mais interessam.
+    for grupo in reversed(ordem):
+        do_grupo = pontos[grupos == grupo]
+        registros = zip(
+            do_grupo["latitude"],
+            do_grupo["longitude"],
+            do_grupo["data"].dt.strftime("%d/%m/%Y").fillna("sem data"),
+            do_grupo["log1"].astype("string").fillna("Local não informado"),
+            do_grupo["tipo_acid"].astype("string").fillna("Tipo não informado"),
+            do_grupo["n_sinais"],
+            do_grupo["dist_sinal"],
+        )
+        for latitude, longitude, data, rua, tipo, quantidade, distancia in registros:
+            folium.CircleMarker(
+                location=[latitude, longitude],
+                radius=4,
+                color="#222222",
+                weight=0.6,
+                fill=True,
+                fill_color=cores[grupo],
+                fill_opacity=0.85,
+                tooltip=(
+                    f"<b>{html.escape(tipo)}</b><br>{data} · {html.escape(rua)}<br>"
+                    f"{int(quantidade)} sinais em até {raio} m<br>"
+                    f"Sinal mais próximo: {distancia:.0f} m"
+                ),
+            ).add_to(camada)
+
+    itens = "".join(
+        f'<div><span style="display:inline-block;width:12px;height:12px;'
+        f'border-radius:50%;background:{cores[g]};border:1px solid #222;'
+        f'margin-right:6px;vertical-align:middle"></span>{html.escape(g)}</div>'
+        for g in ordem
+    )
+    mapa.get_root().html.add_child(folium.Element(
+        '<div style="position:fixed;bottom:24px;left:12px;z-index:9999;'
+        "background:rgba(255,255,255,0.92);color:#262730;padding:8px 10px;"
+        'border-radius:6px;font:12px sans-serif;box-shadow:0 1px 6px rgba(0,0,0,.4)">'
+        f"<b>Sinais em até {raio} m</b>{itens}</div>"
+    ))
+    return mapa

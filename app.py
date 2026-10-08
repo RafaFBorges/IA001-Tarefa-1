@@ -4,6 +4,7 @@ from streamlit_folium import st_folium
 
 import graficos
 import mapas
+import relacao_espacial as relacao
 from pipeline_dados import DATA_EXTRACAO, ler_dados_brutos, preparar_bases
 
 BASE = Path(__file__).parent
@@ -57,6 +58,17 @@ def carregar_dados():
     return tratados
 
 
+@st.cache_data
+def calcular_relacao(_acidentes, _sinalizacao, raio):
+    # Os dados são fixos na sessão: só o raio entra na chave do cache.
+    return relacao.calcular_relacao(_acidentes, _sinalizacao, raio)
+
+
+@st.cache_resource
+def montar_mapa_graves(_graves, _grupos, raio, anos):
+    return mapas.mapa_graves_sinalizacao(_graves, _grupos, raio)
+
+
 @st.cache_resource
 def carregar_brutos():
     # CSVs inteiros, sem tratamento. Só são lidos ao abrir a aba Dados e
@@ -91,6 +103,18 @@ anos_selecionados = st.sidebar.multiselect(
     "Ano",
     options=anos,
     default=anos
+)
+
+raio_sinalizacao = st.sidebar.slider(
+    "Raio da sinalização (m)",
+    min_value=25,
+    max_value=300,
+    value=100,
+    step=25,
+    help=(
+        "Distância em volta de cada acidente usada para contar os sinais "
+        "próximos. Vale só para a aba Sinalização × Acidentes."
+    ),
 )
 
 apenas_graves = st.sidebar.checkbox(
@@ -269,8 +293,8 @@ def renderizar_analise(conjuntos):
             )
 
 
-aba_visao, aba_mapa, aba_analise, aba_dados = st.tabs(
-    ["Visão geral", "Mapas", "Análise de dados", "Dados"],
+aba_visao, aba_mapa, aba_relacao, aba_analise, aba_dados = st.tabs(
+    ["Visão geral", "Mapas", "Sinalização × Acidentes", "Análise de dados", "Dados"],
     on_change="rerun",
 )
 
@@ -368,6 +392,148 @@ with aba_visao:
             mostrar_grafico(
                 graficos.grafico_dias_uteis_fim_de_semana(filtrado)
             )
+
+@st.fragment
+def secao_pareamento(dados, raio):
+    st.subheader("O sinal certo perto do acidente muda a gravidade?")
+    nome_par = st.selectbox("Par de análise", list(relacao.PARES))
+    par = relacao.PARES[nome_par]
+    categoria = par["categoria"]
+
+    dados_par = graficos.dados_pareamento(
+        dados, par["selecao"](dados), categoria
+    )
+    st.caption(
+        f"Compara {par['ocorrencia']} com e sem sinais de \"{categoria}\" em "
+        f"até {raio} m. Cada grupo de densidade reúne locais com quantidade "
+        "parecida de sinais de qualquer tipo, para não confundir o efeito do "
+        "sinal específico com o de haver muita sinalização. Barras de erro: "
+        f"intervalo de confiança de 95%. Grupos com menos de "
+        f"{relacao.MINIMO_REGISTROS} acidentes são omitidos."
+    )
+
+    if dados_par.empty:
+        st.info("Nenhum acidente desse tipo para os filtros selecionados.")
+        return
+    mostrar_grafico(graficos.grafico_pareamento(dados_par, categoria, raio))
+
+
+with aba_relacao:
+    # O mapa só é criado com a aba aberta (mesmo motivo da aba Mapas).
+    if aba_relacao.open:
+        st.subheader("Sinalização × Acidentes")
+        st.caption(
+            f"Cada acidente é ligado aos sinais num raio de {raio_sinalizacao} m "
+            "(ajuste na barra lateral). Entram só os sinais já implantados no "
+            "ano do acidente, mas o cadastro traz apenas os sinais em vigor "
+            "hoje. Esta aba segue o filtro de ano; o filtro de acidentes graves "
+            "não se aplica, porque a análise compara graves com os demais."
+        )
+
+        with st.spinner("Calculando a relação espacial..."):
+            relacao_acidentes = calcular_relacao(
+                df, bases["sinalizacao"], raio_sinalizacao
+            )
+        dados_relacao = df.join(relacao_acidentes, how="inner")
+        dados_relacao = dados_relacao[
+            dados_relacao["ano"].isin(anos_selecionados)
+        ]
+
+        if dados_relacao.empty:
+            st.info("Nenhum acidente com coordenadas para os anos selecionados.")
+        else:
+            colunas_resumo = st.columns(4)
+            colunas_resumo[0].metric(
+                "Acidentes analisados",
+                graficos.formatar_inteiro(len(dados_relacao)),
+                border=True,
+            )
+            colunas_resumo[1].metric(
+                "Acidentes graves (%)",
+                graficos.formatar_percentual(
+                    dados_relacao["acidente_grave"].mean() * 100
+                ),
+                border=True,
+            )
+            colunas_resumo[2].metric(
+                "Distância mediana ao sinal",
+                f"{dados_relacao['dist_sinal'].median():.0f} m",
+                border=True,
+            )
+            colunas_resumo[3].metric(
+                f"Sinais em {raio_sinalizacao} m (mediana)",
+                f"{dados_relacao['n_sinais'].median():.0f}",
+                border=True,
+            )
+
+            st.subheader("Mais sinais ao redor, menos acidentes graves?")
+            st.caption(
+                "Proporção de acidentes graves por grupo de densidade de sinais, "
+                "no total e por tipo de acidente. O tipo pesa muito na "
+                "gravidade (atropelamentos são bem mais graves), por isso a "
+                "separação. É uma associação: áreas centrais têm mais sinais e "
+                "menor velocidade, e a sinalização costuma ser instalada onde "
+                "já houve problema."
+            )
+            dados_densidade = graficos.dados_graves_por_densidade(dados_relacao)
+            if dados_densidade.empty:
+                st.info("Poucos acidentes para formar os grupos de densidade.")
+            else:
+                st.altair_chart(
+                    graficos.grafico_graves_por_densidade(
+                        dados_densidade, raio_sinalizacao
+                    ),
+                    width="content",
+                )
+
+            secao_pareamento(dados_relacao, raio_sinalizacao)
+
+            st.subheader("Onde estão os acidentes graves")
+            graves_relacao = dados_relacao[dados_relacao["acidente_grave"]]
+            if graves_relacao.empty:
+                st.info("Nenhum acidente grave para os anos selecionados.")
+            else:
+                st.caption(
+                    "Cada ponto é um acidente grave, colorido pela quantidade "
+                    f"de sinais em até {raio_sinalizacao} m. Passe o mouse para "
+                    "ver os detalhes."
+                )
+                grupos_mapa = relacao.grupos_densidade(
+                    dados_relacao["n_sinais"]
+                )
+                st_folium(
+                    montar_mapa_graves(
+                        graves_relacao,
+                        grupos_mapa,
+                        raio_sinalizacao,
+                        tuple(sorted(anos_selecionados)),
+                    ),
+                    width=None,
+                    height=550,
+                    key="mapa_graves_sinalizacao",
+                    returned_objects=[],
+                )
+
+            st.subheader("Distância ao sinal mais próximo")
+            st.caption(
+                "A escala do primeiro gráfico é de raiz quadrada, para as faixas "
+                "mais distantes (poucos acidentes) continuarem visíveis. Esta "
+                "análise não depende do raio. No segundo gráfico, faixas com "
+                f"menos de {relacao.MINIMO_REGISTROS} acidentes são omitidas."
+            )
+            contagem_distancia, graves_distancia = graficos.dados_distancia(
+                dados_relacao
+            )
+            esquerda, direita = st.columns(2)
+            with esquerda:
+                mostrar_grafico(
+                    graficos.grafico_histograma_distancia(contagem_distancia)
+                )
+            with direita:
+                mostrar_grafico(
+                    graficos.grafico_graves_por_distancia(graves_distancia)
+                )
+
 
 with aba_analise:
     vitimas = bases["vitimas"]

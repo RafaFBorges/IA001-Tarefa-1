@@ -6,3 +6,4 @@ altair
 folium
 streamlit
 streamlit-folium
+scipy
