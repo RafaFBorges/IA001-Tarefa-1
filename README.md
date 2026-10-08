@@ -101,7 +101,7 @@ Um acidente foi considerado grave quando possuía pelo menos um ferido grave ou 
 
 ## Limitações
 
-A base de vítimas ainda não é cruzada com os acidentes no dashboard. A sinalização é cruzada com os acidentes por proximidade (coordenadas), mas o cadastro traz apenas os sinais em vigor na data da extração e não há dados de fluxo e velocidade das vias.
+As vítimas são ligadas aos acidentes por `idacidente` e herdam a gravidade do acidente (a tabela de vítimas não traz gravidade individual). A sinalização é cruzada com os acidentes por proximidade (coordenadas), mas o cadastro traz apenas os sinais em vigor na data da extração e não há dados de fluxo e velocidade das vias.
 
 Portanto, a aplicação não permite concluir que determinado tipo de sinalização causa ou evita acidentes: as comparações são associações. Os resultados são exploratórios e dependem da qualidade e da cobertura dos registros disponibilizados pela EPTC.
 

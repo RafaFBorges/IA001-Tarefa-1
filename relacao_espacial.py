@@ -36,6 +36,27 @@ PARES = {
     },
 }
 
+# Mesma ideia para as vítimas: perfil da vítima × sinal que deveria protegê-la.
+PARES_VITIMAS = {
+    "Pedestre × Travessia de pedestres": {
+        "categoria": "Travessia de pedestres",
+        "ocorrencia": "vítimas pedestres",
+        "selecao": lambda v: v["papel"].eq("Pedestre"),
+    },
+    "Ciclista × Sinalização de bicicletas": {
+        "categoria": "Bicicletas",
+        "ocorrencia": "vítimas ciclistas",
+        "selecao": lambda v: v["tipo_veic"].eq("BICICLETA"),
+    },
+}
+
+PAPEIS_VITIMA = {
+    "CONDUTOR": "Condutor",
+    "OCUPANTE": "Ocupante",
+    "PEDESTRE": "Pedestre",
+}
+ROTULO_PAPEL_NAO_INFORMADO = "Não informado"
+
 FAIXAS_DISTANCIA = [0, 5, 10, 25, 50, 100, 200, 500, np.inf]
 ROTULOS_DISTANCIA = [
     "< 5", "5–10", "10–25", "25–50", "50–100", "100–200", "200–500", "> 500",
@@ -160,3 +181,31 @@ def proporcao_graves(df, por):
         tabela["graves"], tabela["n"]
     )
     return tabela
+
+
+def ligar_vitimas(vitimas, dados_relacao):
+    """Liga cada vítima ao acidente por `idacidente`.
+
+    A vítima herda do acidente a gravidade e a relação com a sinalização
+    (a tabela de vítimas não tem gravidade individual). `n_vitimas` é o
+    número de vítimas do acidente: com uma só vítima, a gravidade do
+    acidente é a da própria pessoa.
+    """
+    colunas = [
+        "idacidente", "acidente_grave", "acidente_fatal", "n_sinais",
+        "dist_sinal", "n_categorias",
+        *[c for c in dados_relacao.columns if c.startswith(PREFIXO_PERTO)],
+    ]
+    acidentes = dados_relacao[colunas].drop_duplicates("idacidente")
+
+    ligadas = vitimas.merge(acidentes, on="idacidente", how="inner")
+    ligadas["n_vitimas"] = ligadas.groupby("idacidente")["idacidente"].transform("size")
+    ligadas["papel"] = (
+        ligadas["sit_vitima"]
+        .astype("string")
+        .str.strip()
+        .str.upper()
+        .map(PAPEIS_VITIMA)
+        .fillna(ROTULO_PAPEL_NAO_INFORMADO)
+    )
+    return ligadas

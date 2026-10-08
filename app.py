@@ -393,11 +393,10 @@ with aba_visao:
                 graficos.grafico_dias_uteis_fim_de_semana(filtrado)
             )
 
-@st.fragment
-def secao_pareamento(dados, raio):
-    st.subheader("O sinal certo perto do acidente muda a gravidade?")
-    nome_par = st.selectbox("Par de análise", list(relacao.PARES))
-    par = relacao.PARES[nome_par]
+def bloco_pareamento(dados, raio, pares, unidade, chave, titulo):
+    st.subheader(titulo)
+    nome_par = st.selectbox("Par de análise", list(pares), key=chave)
+    par = pares[nome_par]
     categoria = par["categoria"]
 
     dados_par = graficos.dados_pareamento(
@@ -409,13 +408,91 @@ def secao_pareamento(dados, raio):
         "parecida de sinais de qualquer tipo, para não confundir o efeito do "
         "sinal específico com o de haver muita sinalização. Barras de erro: "
         f"intervalo de confiança de 95%. Grupos com menos de "
-        f"{relacao.MINIMO_REGISTROS} acidentes são omitidos."
+        f"{relacao.MINIMO_REGISTROS} {unidade} são omitidos."
     )
 
     if dados_par.empty:
-        st.info("Nenhum acidente desse tipo para os filtros selecionados.")
+        st.info("Nenhum registro desse tipo para os filtros selecionados.")
         return
-    mostrar_grafico(graficos.grafico_pareamento(dados_par, categoria, raio))
+    mostrar_grafico(
+        graficos.grafico_pareamento(dados_par, categoria, raio, unidade)
+    )
+
+
+@st.fragment
+def secao_pareamento(dados, raio):
+    bloco_pareamento(
+        dados,
+        raio,
+        relacao.PARES,
+        "acidentes",
+        "par_acidentes",
+        "O sinal certo perto do acidente muda a gravidade?",
+    )
+
+
+@st.fragment
+def secao_vitimas(dados, raio):
+    st.divider()
+    st.subheader("Vítimas e sinalização")
+    st.caption(
+        "A tabela de vítimas não traz a gravidade de cada pessoa. Cada vítima "
+        "herda a do acidente: \"grave\" quer dizer que ela estava num acidente "
+        "com ferido grave ou morte. Com uma só vítima, isso é a gravidade da "
+        "própria pessoa; com várias, não se sabe qual delas foi a grave."
+    )
+    so_uma_vitima = st.checkbox(
+        "Somente acidentes com uma vítima (gravidade exata da pessoa)",
+        key="vitimas_uma",
+    )
+    if so_uma_vitima:
+        dados = dados[dados["n_vitimas"] == 1]
+
+    if dados.empty:
+        st.info("Nenhuma vítima para os filtros selecionados.")
+        return
+
+    coluna_total, coluna_graves = st.columns(2)
+    coluna_total.metric(
+        "Vítimas analisadas",
+        graficos.formatar_inteiro(len(dados)),
+        border=True,
+    )
+    coluna_graves.metric(
+        "Em acidentes graves (%)",
+        graficos.formatar_percentual(dados["acidente_grave"].mean() * 100),
+        border=True,
+    )
+
+    st.subheader("Quem está mais exposto onde há menos sinais?")
+    st.caption(
+        "Proporção de vítimas em acidentes graves por grupo de densidade de "
+        "sinais, no total e por papel da vítima. Barras de erro: intervalo de "
+        f"confiança de 95%. Grupos com menos de {relacao.MINIMO_REGISTROS} "
+        "vítimas são omitidos."
+    )
+    dados_papel = graficos.dados_graves_por_densidade(
+        dados,
+        coluna="papel",
+        valores=["Condutor", "Ocupante", "Pedestre"],
+        rotulo_todos="Todas as vítimas",
+    )
+    if dados_papel.empty:
+        st.info("Poucas vítimas para formar os grupos de densidade.")
+    else:
+        st.altair_chart(
+            graficos.grafico_graves_por_densidade(dados_papel, raio, "vítimas"),
+            width="content",
+        )
+
+    bloco_pareamento(
+        dados,
+        raio,
+        relacao.PARES_VITIMAS,
+        "vítimas",
+        "par_vitimas",
+        "O sinal certo perto muda a gravidade para pedestres e ciclistas?",
+    )
 
 
 with aba_relacao:
@@ -533,6 +610,11 @@ with aba_relacao:
                 mostrar_grafico(
                     graficos.grafico_graves_por_distancia(graves_distancia)
                 )
+
+            secao_vitimas(
+                relacao.ligar_vitimas(bases["vitimas"], dados_relacao),
+                raio_sinalizacao,
+            )
 
 
 with aba_analise:

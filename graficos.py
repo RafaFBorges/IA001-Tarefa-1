@@ -614,26 +614,46 @@ def _barras_com_erro(base, y_titulo, cor):
     return barras, erros
 
 
-def _tooltip_metricas():
+# Rótulos conforme a unidade contada. Para vítimas, "grave" é o acidente em
+# que ela estava (a tabela de vítimas não traz gravidade individual).
+UNIDADES = {
+    "acidentes": {
+        "plural": "Acidentes",
+        "graves": "Graves",
+        "pct": "Acidentes graves (%)",
+    },
+    "vítimas": {
+        "plural": "Vítimas",
+        "graves": "Em acidentes graves",
+        "pct": "Vítimas em acidentes graves (%)",
+    },
+}
+
+
+def _tooltip_metricas(unidade="acidentes"):
+    rotulos = UNIDADES[unidade]
     return [
-        alt.Tooltip("n:Q", title="Acidentes", format=",.0f"),
-        alt.Tooltip("graves:Q", title="Graves", format=",.0f"),
-        alt.Tooltip("pct:Q", title="Graves (%)", format=".1f"),
+        alt.Tooltip("n:Q", title=rotulos["plural"], format=",.0f"),
+        alt.Tooltip("graves:Q", title=rotulos["graves"], format=",.0f"),
+        alt.Tooltip("pct:Q", title=rotulos["pct"], format=".1f"),
         alt.Tooltip("inferior:Q", title="IC 95% inferior (%)", format=".1f"),
         alt.Tooltip("superior:Q", title="IC 95% superior (%)", format=".1f"),
     ]
 
 
-def dados_graves_por_densidade(df):
+def dados_graves_por_densidade(
+    df, coluna="tipo_acid", valores=TIPOS_COMPARADOS, rotulo_todos=ROTULO_TODOS_TIPOS
+):
     """Proporção de graves por grupo de densidade de sinais, para todos os
-    tipos juntos e para cada tipo de acidente. Os grupos são definidos uma
-    vez com todos os acidentes, para ficarem comparáveis entre os tipos."""
+    registros juntos e para cada valor de `coluna` (por padrão, o tipo de
+    acidente). Os grupos são definidos uma vez com todos os registros, para
+    ficarem comparáveis entre as facetas."""
     import relacao_espacial as relacao
 
     df = df.assign(grupo=relacao.grupos_densidade(df["n_sinais"]))
-    conjuntos = {ROTULO_TODOS_TIPOS: df}
-    for tipo in TIPOS_COMPARADOS:
-        conjuntos[tipo.capitalize()] = df[df["tipo_acid"].eq(tipo)]
+    conjuntos = {rotulo_todos: df}
+    for valor in valores:
+        conjuntos[valor.capitalize()] = df[df[coluna].eq(valor)]
 
     tabelas = []
     for nome, conjunto in conjuntos.items():
@@ -650,7 +670,7 @@ def dados_graves_por_densidade(df):
     return dados
 
 
-def grafico_graves_por_densidade(dados, raio):
+def grafico_graves_por_densidade(dados, raio, unidade="acidentes"):
     ordem_grupos = list(dict.fromkeys(dados["grupo"]))
     ordem_tipos = list(dict.fromkeys(dados["tipo"]))
 
@@ -661,9 +681,12 @@ def grafico_graves_por_densidade(dados, raio):
             title=f"Sinais em até {raio} m do acidente",
             axis=alt.Axis(labelAngle=0),
         ),
-        tooltip=[alt.Tooltip("grupo:N", title="Sinais no raio"), *_tooltip_metricas()],
+        tooltip=[
+            alt.Tooltip("grupo:N", title="Sinais no raio"),
+            *_tooltip_metricas(unidade),
+        ],
     )
-    barras, erros = _barras_com_erro(base, "Acidentes graves (%)", COR_NEUTRA)
+    barras, erros = _barras_com_erro(base, UNIDADES[unidade]["pct"], COR_NEUTRA)
 
     return (
         alt.layer(barras, erros)
@@ -709,7 +732,7 @@ def dados_pareamento(df, selecao, categoria):
     return dados.sort_values("grupo").reset_index(drop=True)
 
 
-def grafico_pareamento(dados, categoria, raio):
+def grafico_pareamento(dados, categoria, raio, unidade="acidentes"):
     ordem_grupos = list(dados["grupo"].cat.categories)
     cor = alt.Color(
         "situacao:N",
@@ -731,10 +754,10 @@ def grafico_pareamento(dados, categoria, raio):
         tooltip=[
             alt.Tooltip("situacao:N", title=f"{categoria} em {raio} m"),
             alt.Tooltip("grupo:N", title="Sinais no raio"),
-            *_tooltip_metricas(),
+            *_tooltip_metricas(unidade),
         ],
     )
-    barras, erros = _barras_com_erro(base, "Acidentes graves (%)", cor)
+    barras, erros = _barras_com_erro(base, UNIDADES[unidade]["pct"], cor)
     return alt.layer(barras, erros).properties(height=300)
 
 
