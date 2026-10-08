@@ -1176,3 +1176,76 @@ def grafico_razao_por_densidade(dados):
     )
     intervalos = base.mark_rule(strokeWidth=2).encode(x="inferior:Q", x2="superior:Q")
     return alt.layer(_referencia_em_um(), intervalos, pontos).properties(height=260)
+
+
+# ---------- combinações de sinalização ----------
+
+def dados_combinacoes(df, quantidade):
+    """As combinações de categorias de sinal mais frequentes, com a
+    proporção de graves de cada uma. Devolve a tabela, a parte dos acidentes
+    que elas cobrem e o total de combinações com amostra suficiente."""
+    import relacao_espacial as relacao
+
+    rotulos, completos = relacao.combinacoes_de_sinais(df)
+    df = df.assign(combinacao=rotulos, categorias=completos)
+    tabela = relacao.proporcao_graves(df, "combinacao")
+    nomes = df.drop_duplicates("combinacao").set_index("combinacao")["categorias"]
+    tabela["categorias"] = tabela["combinacao"].map(nomes)
+    tabela["rotulo_pct"] = tabela["pct"].map(lambda v: formatar_percentual(v))
+
+    cobertura = tabela.nlargest(quantidade, "n")["n"].sum() / len(df)
+    return tabela.nlargest(quantidade, "n").reset_index(drop=True), cobertura, len(tabela)
+
+
+def grafico_combinacoes(tabela):
+    base = alt.Chart(tabela).encode(
+        y=alt.Y(
+            "combinacao:N",
+            sort=alt.EncodingSortField("n", order="descending"),
+            title=None,
+            axis=alt.Axis(labelLimit=420),
+        ),
+        tooltip=[
+            alt.Tooltip("categorias:N", title="Categorias presentes"),
+            *_tooltip_metricas(),
+        ],
+    )
+    barras = base.mark_bar().encode(
+        x=alt.X("n:Q", title="Acidentes"),
+        color=alt.Color(
+            "pct:Q",
+            title="Graves (%)",
+            scale=alt.Scale(scheme="orangered", domainMin=0),
+            legend=alt.Legend(orient="top", format=".1f"),
+        ),
+    )
+    rotulos = base.mark_text(align="left", dx=4, color=COR_VALOR).encode(
+        x="n:Q", text="rotulo_pct:N"
+    )
+    return alt.layer(barras, rotulos).properties(
+        height=max(200, 26 * len(tabela))
+    )
+
+
+def dados_por_n_categorias(df):
+    import relacao_espacial as relacao
+
+    tabela = relacao.proporcao_graves(df, "n_categorias")
+    tabela["n_categorias"] = tabela["n_categorias"].astype(int)
+    return tabela
+
+
+def grafico_graves_por_n_categorias(tabela, raio):
+    base = alt.Chart(tabela).encode(
+        x=alt.X(
+            "n_categorias:O",
+            title=f"Categorias distintas de sinal em até {raio} m",
+            axis=alt.Axis(labelAngle=0),
+        ),
+        tooltip=[
+            alt.Tooltip("n_categorias:O", title="Categorias distintas"),
+            *_tooltip_metricas(),
+        ],
+    )
+    barras, erros = _barras_com_erro(base, "Acidentes graves (%)", COR_NEUTRA)
+    return alt.layer(barras, erros).properties(height=300)

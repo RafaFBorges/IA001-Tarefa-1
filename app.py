@@ -963,6 +963,48 @@ def secao_pontos_criticos(dados, raio):
     )
 
 
+@st.fragment
+def secao_combinacoes(dados, raio):
+    st.subheader("Combinações de sinalização")
+    siglas = "; ".join(f"{sigla} = {nome}" for nome, sigla in relacao.SIGLAS.items())
+    st.caption(
+        "Cada acidente tem uma combinação: o conjunto de categorias de sinal "
+        f"presentes em até {raio} m. Siglas: {siglas}. Segue o filtro de ano."
+    )
+
+    quantidade = st.select_slider(
+        "Combinações mostradas",
+        options=[10, 15, 20, 30],
+        value=15,
+        key="combinacoes_quantidade",
+    )
+    tabela, cobertura, total = graficos.dados_combinacoes(dados, quantidade)
+    if tabela.empty:
+        st.info("Poucos acidentes para formar combinações.")
+        return
+
+    st.markdown(
+        f"**As {len(tabela)} combinações mais frequentes cobrem "
+        f"{cobertura:.0%} dos acidentes**; ao todo são {total} combinações com "
+        f"pelo menos {relacao.MINIMO_REGISTROS} acidentes. Barras ordenadas pelo "
+        "número de acidentes; a cor e o número ao lado mostram a % de graves."
+    )
+    mostrar_grafico(graficos.grafico_combinacoes(tabela))
+
+    st.subheader("Quantas categorias distintas de sinal há por perto?")
+    st.caption(
+        "Proporção de acidentes graves conforme o número de categorias "
+        "diferentes presentes no raio (de 0 a 9). Barras de erro: intervalo de "
+        f"confiança de 95%. Grupos com menos de {relacao.MINIMO_REGISTROS} "
+        "acidentes são omitidos."
+    )
+    mostrar_grafico(
+        graficos.grafico_graves_por_n_categorias(
+            graficos.dados_por_n_categorias(dados), raio
+        )
+    )
+
+
 with aba_relacao:
     # O mapa só é criado com a aba aberta (mesmo motivo da aba Mapas).
     if aba_relacao.open:
@@ -1036,6 +1078,8 @@ with aba_relacao:
             secao_regiao(dados_relacao, raio_sinalizacao)
 
             secao_ajustada(dados_relacao, raio_sinalizacao)
+
+            secao_combinacoes(dados_relacao, raio_sinalizacao)
 
             secao_pareamento(dados_relacao, raio_sinalizacao)
 

@@ -640,3 +640,32 @@ def ranking_pontos_criticos(dados, tamanho):
     posicao = ranking["sinais_mediana"].rank(pct=True, method="average")
     ranking["prioridade"] = ranking["graves"] * (1 - posicao)
     return ranking.reset_index(drop=True)
+
+
+# ---------- combinações de sinalização ----------
+
+SIGLAS = {
+    "Bicicletas": "Bici",
+    "Divisão de pista e delimitação": "Divisão",
+    "Estacionamento": "Estac",
+    "Outras placas e marcações": "Outras",
+    "Pare / retenção": "Pare",
+    "Setas e orientação": "Setas",
+    "Transporte coletivo": "T.Col",
+    "Travessia de pedestres": "Travessia",
+    "Velocidade e moderadores": "Veloc",
+}
+ROTULO_SEM_SINAIS = "Nenhuma"
+
+
+def combinacoes_de_sinais(dados):
+    """Para cada acidente, a combinação de categorias de sinal presentes no
+    raio: o rótulo com siglas e o nome completo das categorias."""
+    colunas = [c for c in dados.columns if c.startswith(PREFIXO_PERTO)]
+    nomes = np.array([c[len(PREFIXO_PERTO):] for c in colunas])
+    siglas = np.array([SIGLAS.get(n, n) for n in nomes])
+    presentes = dados[colunas].to_numpy(dtype=bool)
+
+    rotulos = [" + ".join(siglas[linha]) or ROTULO_SEM_SINAIS for linha in presentes]
+    completos = [", ".join(nomes[linha]) or ROTULO_SEM_SINAIS for linha in presentes]
+    return pd.Series(rotulos, index=dados.index), pd.Series(completos, index=dados.index)
