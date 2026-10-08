@@ -410,6 +410,11 @@ def resumir_antes_depois(locais):
         pct_depois_inf, pct_depois_sup = (
             intervalo_wilson(graves_depois, depois) if depois else (np.nan, np.nan)
         )
+        razao_graves = graves_depois / graves_antes if graves_antes else np.nan
+        erro_graves = (
+            np.sqrt(1 / graves_antes + 1 / graves_depois)
+            if graves_antes and graves_depois else np.nan
+        )
         linhas.append({
             "grupo": grupo,
             "locais": len(parte),
@@ -421,6 +426,8 @@ def resumir_antes_depois(locais):
             "log_erro": erro,
             "razao_inferior": razao * np.exp(-1.96 * erro),
             "razao_superior": razao * np.exp(1.96 * erro),
+            "razao_graves": razao_graves,
+            "log_erro_graves": erro_graves,
             "graves_antes": graves_antes,
             "graves_depois": graves_depois,
             "pct_graves_antes": graves_antes / antes * 100 if antes else np.nan,
@@ -433,18 +440,203 @@ def resumir_antes_depois(locais):
     return pd.DataFrame(linhas)
 
 
-def efeito_relativo(resumo):
+def efeito_relativo(resumo, graves=False):
     """Razão depois/antes dos tratados dividida pela do controle, com
     intervalo de 95%. Abaixo de 1: os acidentes caíram mais (ou subiram
-    menos) onde entrou o sinal. Devolve None sem os dois grupos."""
+    menos) onde entrou o sinal. Com `graves=True`, conta só os acidentes
+    graves. Devolve None sem os dois grupos."""
     por_grupo = resumo.set_index("grupo")
     if not {GRUPO_TRATADO, GRUPO_CONTROLE} <= set(por_grupo.index):
         return None
+    razao_col, erro_col = (
+        ("razao_graves", "log_erro_graves") if graves else ("razao", "log_erro")
+    )
     tratado, controle = por_grupo.loc[GRUPO_TRATADO], por_grupo.loc[GRUPO_CONTROLE]
-    razao = tratado["razao"] / controle["razao"]
-    erro = np.sqrt(tratado["log_erro"] ** 2 + controle["log_erro"] ** 2)
+    razao = tratado[razao_col] / controle[razao_col]
+    erro = np.sqrt(tratado[erro_col] ** 2 + controle[erro_col] ** 2)
+    if not np.isfinite(razao) or not np.isfinite(erro):
+        return None
     return {
         "razao": razao,
         "inferior": razao * np.exp(-1.96 * erro),
         "superior": razao * np.exp(1.96 * erro),
     }
+
+
+# ---------- razão ajustada (Mantel-Haenszel) ----------
+
+COLUNAS_CONTROLE = ["tipo_acid", "regiao", "noite_dia", "ano"]
+MINIMO_EXPOSTOS = 30
+
+
+def _estratos(df, colunas):
+    """Um número por combinação das colunas de controle."""
+    chaves = df[colunas].astype("string").fillna("NI")
+    return chaves.groupby(colunas, sort=False).ngroup().to_numpy()
+
+
+def razao_ajustada(grave, exposto, estratos):
+    """Razão de riscos de Mantel-Haenszel: compara acidentes graves entre
+    expostos e não expostos dentro de cada estrato e junta as comparações.
+
+    `grave` e `exposto` são booleanos; `estratos`, o número do estrato de
+    cada registro. Devolve a razão bruta (sem controle) e a ajustada, com
+    intervalo de confiança de 95% (Greenland-Robins) para a ajustada.
+    """
+    grave = np.asarray(grave, dtype=bool)
+    exposto = np.asarray(exposto, dtype=bool)
+    k = int(estratos.max()) + 1
+
+    def contar(mascara):
+        return np.bincount(estratos, weights=mascara.astype(float), minlength=k)
+
+    expostos, nao_expostos = contar(exposto), contar(~exposto)
+    graves_exp, graves_nao = contar(grave & exposto), contar(grave & ~exposto)
+    total = expostos + nao_expostos
+
+    resultado = {
+        "n_expostos": int(exposto.sum()),
+        "n_nao_expostos": int((~exposto).sum()),
+        "pct_expostos": np.nan,
+        "pct_nao_expostos": np.nan,
+        "razao_bruta": np.nan,
+        "razao": np.nan,
+        "inferior": np.nan,
+        "superior": np.nan,
+    }
+    if resultado["n_expostos"] == 0 or resultado["n_nao_expostos"] == 0:
+        return resultado
+
+    resultado["pct_expostos"] = graves_exp.sum() / expostos.sum() * 100
+    resultado["pct_nao_expostos"] = graves_nao.sum() / nao_expostos.sum() * 100
+    if graves_nao.sum() > 0:
+        resultado["razao_bruta"] = (
+            resultado["pct_expostos"] / resultado["pct_nao_expostos"]
+        )
+
+    presentes = total > 0
+    r = (graves_exp[presentes] * nao_expostos[presentes] / total[presentes]).sum()
+    s = (graves_nao[presentes] * expostos[presentes] / total[presentes]).sum()
+    if r > 0 and s > 0:
+        razao = r / s
+        p = (
+            expostos[presentes] * nao_expostos[presentes]
+            * (graves_exp[presentes] + graves_nao[presentes])
+            - graves_exp[presentes] * graves_nao[presentes] * total[presentes]
+        ) / total[presentes] ** 2
+        erro = np.sqrt(max(p.sum(), 0) / (r * s))
+        resultado.update(
+            razao=razao,
+            inferior=razao * np.exp(-1.96 * erro),
+            superior=razao * np.exp(1.96 * erro),
+        )
+    return resultado
+
+
+def razoes_por_categoria(dados, categorias):
+    """Para cada categoria de sinal, a razão de graves entre acidentes com e
+    sem a categoria por perto, controlando a densidade de sinais, o tipo de
+    acidente e a região."""
+    dados = dados.assign(grupo_densidade=grupos_densidade(dados["n_sinais"]))
+    estratos = _estratos(dados, ["grupo_densidade", "tipo_acid", "regiao"])
+    grave = dados["acidente_grave"].to_numpy()
+
+    linhas = []
+    for categoria in categorias:
+        coluna = PREFIXO_PERTO + categoria
+        if coluna not in dados:
+            continue
+        linhas.append({
+            "categoria": categoria,
+            **razao_ajustada(grave, dados[coluna].to_numpy(), estratos),
+        })
+    return pd.DataFrame(linhas)
+
+
+def razoes_por_densidade(dados):
+    """Razão de graves de cada grupo de densidade contra o grupo com menos
+    sinais, bruta e controlando tipo de acidente, região, horário e ano."""
+    dados = dados.assign(grupo=grupos_densidade(dados["n_sinais"]))
+    grupos = list(dados["grupo"].cat.categories)
+    referencia = grupos[0]
+
+    linhas = []
+    for grupo in grupos[1:]:
+        parte = dados[dados["grupo"].isin([referencia, grupo])]
+        estratos = _estratos(parte, COLUNAS_CONTROLE)
+        linhas.append({
+            "grupo": grupo,
+            "referencia": referencia,
+            **razao_ajustada(
+                parte["acidente_grave"].to_numpy(),
+                parte["grupo"].eq(grupo).to_numpy(),
+                estratos,
+            ),
+        })
+    return pd.DataFrame(linhas)
+
+
+# ---------- pontos críticos ----------
+
+TAMANHOS_CELULA = [100, 200, 300]
+
+
+def _mais_frequente(df, celulas, coluna):
+    """Valor mais frequente de `coluna` em cada célula."""
+    contagem = (
+        df.assign(celula=celulas)
+        .dropna(subset=[coluna])
+        .groupby(["celula", coluna])
+        .size()
+        .rename("n")
+        .reset_index()
+        .sort_values(["celula", "n"], ascending=[True, False])
+        .drop_duplicates("celula")
+    )
+    return contagem.set_index("celula")[coluna]
+
+
+def ranking_pontos_criticos(dados, tamanho):
+    """Divide a cidade em células quadradas de `tamanho` metros e lista as que
+    têm acidentes graves, com a sinalização do entorno.
+
+    A prioridade combina quantidade de graves e pouca sinalização: número de
+    graves multiplicado por (1 - posição da célula entre as demais quanto à
+    mediana de sinais no raio). Quanto menos sinais perto, maior o peso.
+    """
+    dados = dados.dropna(subset=["latitude", "longitude"])
+    pontos = projetar(dados)
+    indices = np.floor(pontos / tamanho).astype(np.int64)
+    celulas = pd.Series(
+        indices[:, 0] * 1_000_003 + indices[:, 1], index=dados.index
+    )
+
+    grupos = dados.assign(celula=celulas).groupby("celula")
+    ranking = grupos.agg(
+        acidentes=("acidente_grave", "size"),
+        graves=("acidente_grave", "sum"),
+        mortes=("acidente_fatal", "sum"),
+        sinais_mediana=("n_sinais", "median"),
+        categorias_mediana=("n_categorias", "median"),
+        distancia_mediana=("dist_sinal", "median"),
+        latitude=("latitude", "mean"),
+        longitude=("longitude", "mean"),
+    )
+    ranking = ranking[ranking["graves"] > 0].copy()
+    ranking["graves_pct"] = ranking["graves"] / ranking["acidentes"] * 100
+
+    # Para o nome do local, só os acidentes graves da célula contam.
+    graves = dados[dados["acidente_grave"]]
+    celulas_graves = celulas.loc[graves.index]
+    rua = _mais_frequente(graves, celulas_graves, "log1")
+    cruzamento = _mais_frequente(graves, celulas_graves, "log2")
+    ranking["rua"] = rua.reindex(ranking.index)
+    ranking["cruzamento"] = cruzamento.reindex(ranking.index)
+    ranking["local"] = (
+        ranking["rua"].fillna("Local não informado")
+        + np.where(ranking["cruzamento"].notna(), " × " + ranking["cruzamento"].fillna(""), "")
+    )
+
+    posicao = ranking["sinais_mediana"].rank(pct=True, method="average")
+    ranking["prioridade"] = ranking["graves"] * (1 - posicao)
+    return ranking.reset_index(drop=True)

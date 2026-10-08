@@ -1,4 +1,5 @@
 from pathlib import Path
+import pandas as pd
 import streamlit as st
 from streamlit_folium import st_folium
 
@@ -189,10 +190,33 @@ def mostrar_grafico(grafico):
 
 
 @st.fragment
-def mostrar_heatmap_dia_hora(dados_heatmap):
-    maximo_heatmap = int(dados_heatmap["quantidade"].max())
-
+def mostrar_heatmap_dia_hora(dados):
     st.subheader("Distribuição de acidentes por dia da semana e horário")
+
+    # Filtros do heatmap: valem só para este gráfico e reexecutam só este bloco.
+    coluna_tipo, coluna_vitimas = st.columns([3, 2], vertical_alignment="bottom")
+    tipos = list(dados["tipo_acid"].dropna().value_counts().index)
+    tipo_heatmap = coluna_tipo.selectbox(
+        "Tipo de acidente",
+        [graficos.ROTULO_TODOS_TIPOS] + tipos,
+        key="heatmap_tipo",
+    )
+    so_com_vitimas = coluna_vitimas.checkbox(
+        "Somente acidentes com vítimas",
+        key="heatmap_vitimas",
+        help="Acidentes com ao menos um ferido ou morto.",
+    )
+    if tipo_heatmap != graficos.ROTULO_TODOS_TIPOS:
+        dados = dados[dados["tipo_acid"].eq(tipo_heatmap)]
+    if so_com_vitimas:
+        dados = dados[(dados["feridos"].fillna(0) + dados["mortes"].fillna(0)) > 0]
+
+    if dados.empty:
+        st.info("Nenhum acidente para o tipo e os filtros selecionados.")
+        return
+
+    dados_heatmap = graficos.dados_heatmap_dia_hora(dados)
+    maximo_heatmap = int(dados_heatmap["quantidade"].max())
 
     piso_heatmap = 0
     if maximo_heatmap > 1:
@@ -384,9 +408,7 @@ with aba_visao:
         )
 
     if not filtrado.empty:
-        mostrar_heatmap_dia_hora(
-            graficos.dados_heatmap_dia_hora(filtrado)
-        )
+        mostrar_heatmap_dia_hora(filtrado)
 
         esquerda, direita = st.columns(2)
 
@@ -704,6 +726,243 @@ def secao_vitimas(dados, raio):
     )
 
 
+MESES_RESUMO = 12
+
+
+def leitura_razao(efeito):
+    """Lê uma razão de graves pelo intervalo de confiança."""
+    if efeito is None or pd.isna(efeito["razao"]) or pd.isna(efeito["inferior"]):
+        return "sem dados suficientes"
+    if efeito["superior"] < 1:
+        return "menos graves"
+    if efeito["inferior"] > 1:
+        return "mais graves"
+    return "sem diferença clara"
+
+
+def texto_intervalo(efeito):
+    if efeito is None or pd.isna(efeito["inferior"]):
+        return ""
+    return f"{efeito['inferior']:.2f} a {efeito['superior']:.2f}".replace(".", ",")
+
+
+def secao_resumo_categorias(dados, raio):
+    st.subheader("Quais tipos de sinalização se associam a menos acidentes graves?")
+    st.caption(
+        "Duas leituras para cada categoria. **Entre locais:** compara a "
+        f"proporção de acidentes graves com e sem a categoria em até {raio} m, "
+        "dentro de grupos com a mesma densidade de sinais, o mesmo tipo de "
+        "acidente e a mesma região, e junta as comparações (razão de "
+        "Mantel-Haenszel). **Antes e depois:** número de acidentes graves em "
+        f"volta de sinais implantados, {MESES_RESUMO} meses antes e depois, "
+        "contra locais de controle (usa todos os acidentes, sem os filtros). "
+        "Abaixo de 1 significa menos graves. É associação: sinais costumam ser "
+        "instalados onde já havia problema."
+    )
+
+    categorias = list(bases["sinalizacao"]["categoria"].value_counts().index)
+    entre = relacao.razoes_por_categoria(dados, categorias).set_index("categoria")
+
+    linhas_tabela, linhas_grafico = [], []
+    for categoria in categorias:
+        linha = entre.loc[categoria] if categoria in entre.index else None
+        antes_depois_acidentes = antes_depois_graves = None
+        locais, info = calcular_antes_depois(
+            df, bases["sinalizacao"], categoria, raio, MESES_RESUMO
+        )
+        if info["locais_tratados"] >= relacao.MINIMO_REGISTROS:
+            resumo_ad = relacao.resumir_antes_depois(locais)
+            antes_depois_acidentes = relacao.efeito_relativo(resumo_ad)
+            antes_depois_graves = relacao.efeito_relativo(resumo_ad, graves=True)
+
+        if linha is not None:
+            linhas_tabela.append({
+                "Categoria": categoria,
+                "Acidentes com a categoria por perto": int(linha["n_expostos"]),
+                "Graves com (%)": linha["pct_expostos"],
+                "Graves sem (%)": linha["pct_nao_expostos"],
+                "Razão bruta": linha["razao_bruta"],
+                "Razão ajustada": linha["razao"],
+                "IC 95% (ajustada)": texto_intervalo(linha),
+                "Entre locais": leitura_razao(linha),
+                "Antes e depois (acidentes)": (
+                    antes_depois_acidentes["razao"] if antes_depois_acidentes else None
+                ),
+                "Antes e depois: leitura": leitura_razao(antes_depois_acidentes),
+            })
+            if not pd.isna(linha["razao"]):
+                linhas_grafico.append({
+                    "categoria": categoria,
+                    "serie": graficos.SERIE_ENTRE_LOCAIS,
+                    "razao": linha["razao"],
+                    "inferior": linha["inferior"],
+                    "superior": linha["superior"],
+                })
+        if antes_depois_graves is not None:
+            linhas_grafico.append({
+                "categoria": categoria,
+                "serie": graficos.SERIE_ANTES_DEPOIS,
+                **antes_depois_graves,
+            })
+
+    if not linhas_grafico:
+        st.info("Poucos acidentes para os filtros selecionados.")
+        return
+
+    tabela = pd.DataFrame(linhas_tabela)
+    menos = list(tabela.loc[tabela["Entre locais"] == "menos graves", "Categoria"])
+    mais = list(tabela.loc[tabela["Entre locais"] == "mais graves", "Categoria"])
+    st.markdown(
+        "**Entre locais, associadas a menos graves:** "
+        + (", ".join(menos) if menos else "nenhuma")
+        + ". **A mais graves:** "
+        + (", ".join(mais) if mais else "nenhuma")
+        + "."
+    )
+    mostrar_grafico(
+        graficos.grafico_razao_por_categoria(pd.DataFrame(linhas_grafico))
+    )
+    st.dataframe(
+        tabela,
+        hide_index=True,
+        column_config={
+            "Graves com (%)": st.column_config.NumberColumn(format="%.1f"),
+            "Graves sem (%)": st.column_config.NumberColumn(format="%.1f"),
+            "Razão bruta": st.column_config.NumberColumn(format="%.2f"),
+            "Razão ajustada": st.column_config.NumberColumn(format="%.2f"),
+            "Antes e depois (acidentes)": st.column_config.NumberColumn(format="%.2f"),
+        },
+        width="stretch",
+    )
+
+
+def secao_ajustada(dados, raio):
+    st.subheader("Depois de controlar tudo, a densidade ainda importa?")
+    razoes = relacao.razoes_por_densidade(dados)
+    if razoes.empty:
+        st.info("Poucos acidentes para formar os grupos de densidade.")
+        return
+
+    referencia = razoes["referencia"].iloc[0]
+    st.caption(
+        f"Cada grupo de densidade de sinais em até {raio} m é comparado ao de "
+        f"menos sinais ({referencia}). A razão ajustada compara só acidentes do "
+        "mesmo tipo, da mesma região, do mesmo período (dia ou noite) e do "
+        "mesmo ano, e junta as comparações. Se ela ficar perto da bruta, esses "
+        "fatores explicam pouco do padrão."
+    )
+    ultimo = razoes.iloc[-1]
+    colunas = st.columns(3)
+    colunas[0].metric(
+        f"Grupo {ultimo['grupo']} × {referencia}: razão bruta",
+        f"{ultimo['razao_bruta']:.2f}".replace(".", ","),
+        border=True,
+    )
+    colunas[1].metric(
+        "Razão ajustada",
+        f"{ultimo['razao']:.2f}".replace(".", ","),
+        border=True,
+    )
+    colunas[2].metric(
+        "IC 95% (ajustada)",
+        texto_intervalo(ultimo),
+        border=True,
+    )
+    mostrar_grafico(graficos.grafico_razao_por_densidade(razoes))
+
+
+@st.fragment
+def secao_pontos_criticos(dados, raio):
+    st.subheader("Pontos críticos para priorização")
+    st.caption(
+        "A cidade é dividida em áreas quadradas; cada linha é uma área com "
+        "acidentes graves. **Prioridade** = número de graves × (1 − posição da "
+        f"área entre as demais quanto à mediana de sinais em até {raio} m): "
+        "quanto mais graves e menos sinais, maior. O nome é a rua e a "
+        "transversal mais frequentes entre os acidentes graves da área. Segue "
+        "o filtro de ano."
+    )
+
+    c1, c2, c3, c4 = st.columns(4)
+    tamanho = c1.select_slider(
+        "Tamanho da área (m)", options=relacao.TAMANHOS_CELULA, value=200,
+        key="criticos_tamanho",
+    )
+    ordem = c2.selectbox(
+        "Ordenar por",
+        [
+            "Prioridade (graves com pouca sinalização)",
+            "Mais acidentes graves",
+            "Maior % de graves (mín. 10 acidentes)",
+        ],
+        key="criticos_ordem",
+    )
+    minimo = c3.slider(
+        "Mínimo de graves na área", 1, 10, 3, key="criticos_minimo"
+    )
+    quantidade = c4.selectbox(
+        "Quantos mostrar", [10, 20, 50], key="criticos_quantidade"
+    )
+
+    ranking = relacao.ranking_pontos_criticos(dados, tamanho)
+    ranking = ranking[ranking["graves"] >= minimo]
+    if ordem.startswith("Maior %"):
+        ranking = ranking[ranking["acidentes"] >= 10].sort_values(
+            ["graves_pct", "graves"], ascending=False
+        )
+    elif ordem.startswith("Mais acidentes"):
+        ranking = ranking.sort_values(["graves", "prioridade"], ascending=False)
+    else:
+        ranking = ranking.sort_values(["prioridade", "graves"], ascending=False)
+    ranking = ranking.head(quantidade)
+
+    if ranking.empty:
+        st.info("Nenhuma área com esse mínimo de acidentes graves.")
+        return
+
+    tabela = ranking[[
+        "local", "graves", "acidentes", "graves_pct", "mortes",
+        "sinais_mediana", "categorias_mediana", "distancia_mediana", "prioridade",
+    ]].rename(columns={
+        "local": "Local",
+        "graves": "Graves",
+        "acidentes": "Acidentes",
+        "graves_pct": "Graves (%)",
+        "mortes": "Fatais",
+        "sinais_mediana": f"Sinais em {raio} m (mediana)",
+        "categorias_mediana": "Categorias de sinal (mediana)",
+        "distancia_mediana": "Distância ao sinal (m, mediana)",
+        "prioridade": "Prioridade",
+    })
+    tabela.index = pd.RangeIndex(1, len(tabela) + 1, name="Posição")
+
+    st.dataframe(
+        tabela,
+        column_config={
+            "Graves (%)": st.column_config.NumberColumn(format="%.1f"),
+            "Fatais": st.column_config.NumberColumn(format="%d"),
+            f"Sinais em {raio} m (mediana)": st.column_config.NumberColumn(format="%.0f"),
+            "Categorias de sinal (mediana)": st.column_config.NumberColumn(format="%.0f"),
+            "Distância ao sinal (m, mediana)": st.column_config.NumberColumn(format="%.0f"),
+            "Prioridade": st.column_config.NumberColumn(format="%.1f"),
+        },
+        width="stretch",
+    )
+    st.download_button(
+        "Baixar ranking (CSV)",
+        tabela.to_csv(sep=";", decimal=",").encode("utf-8-sig"),
+        file_name="pontos_criticos.csv",
+        mime="text/csv",
+    )
+    st_folium(
+        mapas.mapa_pontos_criticos(ranking, raio),
+        width=None,
+        height=450,
+        key="mapa_pontos_criticos",
+        returned_objects=[],
+    )
+
+
 with aba_relacao:
     # O mapa só é criado com a aba aberta (mesmo motivo da aba Mapas).
     if aba_relacao.open:
@@ -752,6 +1011,8 @@ with aba_relacao:
                 border=True,
             )
 
+            secao_resumo_categorias(dados_relacao, raio_sinalizacao)
+
             st.subheader("Mais sinais ao redor, menos acidentes graves?")
             st.caption(
                 "Proporção de acidentes graves por grupo de densidade de sinais, "
@@ -773,6 +1034,8 @@ with aba_relacao:
                 )
 
             secao_regiao(dados_relacao, raio_sinalizacao)
+
+            secao_ajustada(dados_relacao, raio_sinalizacao)
 
             secao_pareamento(dados_relacao, raio_sinalizacao)
 
@@ -801,6 +1064,8 @@ with aba_relacao:
                     key="mapa_graves_sinalizacao",
                     returned_objects=[],
                 )
+
+            secao_pontos_criticos(dados_relacao, raio_sinalizacao)
 
             st.subheader("Distância ao sinal mais próximo")
             st.caption(

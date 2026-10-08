@@ -797,3 +797,46 @@ def mapa_graves_sinalizacao(graves, grupos, raio):
         f"<b>Sinais em até {raio} m</b>{itens}</div>"
     ))
     return mapa
+
+
+def mapa_pontos_criticos(pontos, raio):
+    """Os pontos críticos do ranking, numerados pela posição. O tamanho do
+    círculo segue o número de acidentes graves."""
+    mapa = _base_mapa()
+    camada = folium.FeatureGroup(name="Pontos críticos").add_to(mapa)
+
+    for posicao, ponto in enumerate(pontos.itertuples(), start=1):
+        folium.CircleMarker(
+            location=[ponto.latitude, ponto.longitude],
+            radius=7 + 2 * ponto.graves ** 0.5,
+            color="#7f0000",
+            weight=1.5,
+            fill=True,
+            fill_color=COR_GRAVE,
+            fill_opacity=0.6,
+            tooltip=(
+                f"<b>#{posicao} {html.escape(ponto.local)}</b><br>"
+                f"{int(ponto.graves)} graves em {int(ponto.acidentes)} acidentes<br>"
+                f"Sinais em até {raio} m: {ponto.sinais_mediana:.0f} (mediana)"
+            ),
+        ).add_to(camada)
+        folium.Marker(
+            location=[ponto.latitude, ponto.longitude],
+            icon=folium.DivIcon(
+                html=(
+                    '<div style="font:bold 11px sans-serif;color:#222;'
+                    f'transform:translate(-50%,-50%);text-align:center">{posicao}</div>'
+                ),
+                icon_size=(0, 0),
+            ),
+        ).add_to(camada)
+
+    if len(pontos):
+        mapa.fit_bounds(
+            [
+                [pontos["latitude"].min(), pontos["longitude"].min()],
+                [pontos["latitude"].max(), pontos["longitude"].max()],
+            ],
+            padding=(30, 30),
+        )
+    return mapa
