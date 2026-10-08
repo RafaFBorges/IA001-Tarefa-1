@@ -64,6 +64,11 @@ def calcular_relacao(_acidentes, _sinalizacao, raio):
     return relacao.calcular_relacao(_acidentes, _sinalizacao, raio)
 
 
+@st.cache_data
+def calcular_antes_depois(_acidentes, _sinalizacao, categoria, raio, meses):
+    return relacao.antes_depois(_acidentes, _sinalizacao, categoria, raio, meses)
+
+
 @st.cache_resource
 def montar_mapa_graves(_graves, _grupos, raio, anos):
     return mapas.mapa_graves_sinalizacao(_graves, _grupos, raio)
@@ -490,6 +495,86 @@ def secao_pareamento(dados, raio):
 
 
 @st.fragment
+def secao_antes_depois(raio):
+    st.divider()
+    st.subheader("Os acidentes mudam depois que o sinal entra?")
+    st.caption(
+        "Para cada sinal implantado, compara os acidentes num raio de "
+        f"{raio} m nos meses antes e depois da data de implantação. Entram só "
+        "locais sem outra implantação por perto dentro da janela. O controle "
+        "são locais de sinais antigos da mesma categoria, com datas sorteadas "
+        "entre as dos novos: ele mostra a tendência geral dos acidentes no "
+        "período. Esta análise usa todos os acidentes e não segue os filtros "
+        "de ano e de gravidade."
+    )
+
+    categorias = list(bases["sinalizacao"]["categoria"].value_counts().index)
+    coluna_categoria, coluna_janela = st.columns(2)
+    categoria = coluna_categoria.selectbox(
+        "Categoria do sinal", categorias, key="antes_depois_categoria"
+    )
+    meses = coluna_janela.select_slider(
+        "Janela antes e depois (meses)",
+        options=[6, 12, 18, 24],
+        value=12,
+        key="antes_depois_meses",
+        help="Janelas maiores têm menos locais elegíveis: precisam de dados "
+        "nos dois lados da implantação.",
+    )
+
+    with st.spinner("Comparando antes e depois..."):
+        locais, info = calcular_antes_depois(
+            df, bases["sinalizacao"], categoria, raio, meses
+        )
+
+    st.caption(
+        f"{graficos.formatar_inteiro(info['implantacoes_na_janela'])} "
+        f"implantações na janela, em {graficos.formatar_inteiro(info['locais_unicos'])} "
+        f"locais distintos; {graficos.formatar_inteiro(info['locais_tratados'])} "
+        "ficaram sem outra implantação por perto e entram na análise. "
+        f"Controle: {graficos.formatar_inteiro(info['locais_controle'])} locais."
+    )
+
+    if info["locais_tratados"] < relacao.MINIMO_REGISTROS:
+        st.info(
+            "Poucos locais com essa categoria para a janela e o raio "
+            "escolhidos. Tente uma janela menor ou outro raio."
+        )
+        return
+
+    resumo = relacao.resumir_antes_depois(locais)
+    efeito = relacao.efeito_relativo(resumo)
+
+    esquerda, direita = st.columns(2)
+    with esquerda:
+        mostrar_grafico(graficos.grafico_media_antes_depois(resumo, meses))
+    with direita:
+        mostrar_grafico(graficos.grafico_razao_antes_depois(resumo, efeito))
+
+    if efeito is not None:
+        faixa = f"{efeito['inferior']:.2f} a {efeito['superior']:.2f}".replace(".", ",")
+        razao = f"{efeito['razao']:.2f}".replace(".", ",")
+        if efeito["inferior"] <= 1 <= efeito["superior"]:
+            leitura = "o intervalo inclui 1: não há diferença distinguível do controle."
+        elif efeito["superior"] < 1:
+            leitura = "os acidentes caíram mais (ou subiram menos) onde entrou o sinal."
+        else:
+            leitura = "os acidentes subiram mais onde entrou o sinal."
+        st.markdown(
+            f"**Efeito relativo: {razao}** (intervalo de 95%: {faixa}); {leitura} "
+            "Os intervalos tendem a ser estreitos demais, porque o mesmo "
+            "acidente pode contar em mais de um local próximo."
+        )
+
+    st.subheader("Gravidade antes e depois")
+    st.caption(
+        "Proporção de acidentes graves nos mesmos locais, antes e depois. "
+        "Barras de erro: intervalo de confiança de 95%."
+    )
+    mostrar_grafico(graficos.grafico_graves_antes_depois(resumo))
+
+
+@st.fragment
 def secao_vitimas(dados, raio):
     st.divider()
     st.subheader("Vítimas e sinalização")
@@ -670,6 +755,8 @@ with aba_relacao:
                 mostrar_grafico(
                     graficos.grafico_graves_por_distancia(graves_distancia)
                 )
+
+            secao_antes_depois(raio_sinalizacao)
 
             secao_vitimas(
                 relacao.ligar_vitimas(bases["vitimas"], dados_relacao),

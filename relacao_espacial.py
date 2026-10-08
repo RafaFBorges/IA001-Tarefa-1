@@ -227,3 +227,204 @@ def resumo_regioes(df):
     )
     resumo.index = resumo.index.str.capitalize()
     return resumo.rename_axis("Região")
+
+
+# ---------- antes e depois de uma implantação ----------
+
+CELULA_METROS = 25
+DIAS_POR_MES = 30.44
+GRUPO_TRATADO = "Com sinal novo"
+GRUPO_CONTROLE = "Sem sinal novo (controle)"
+MAXIMO_CONTROLES = 5000
+
+
+def _dias(datas):
+    return datas.to_numpy().astype("datetime64[D]").astype("int64")
+
+
+def _um_por_celula(pontos, dias):
+    """Mantém um local por célula de CELULA_METROS, o de implantação mais
+    antiga, para não contar duas vezes o mesmo ponto."""
+    ordem = np.argsort(dias, kind="stable")
+    celulas = np.floor(pontos[ordem] / CELULA_METROS).astype(int)
+    _, primeiros = np.unique(celulas, axis=0, return_index=True)
+    return ordem[np.sort(primeiros)]
+
+
+def antes_depois(acidentes, sinalizacao, categoria, raio, meses, semente=0):
+    """Compara os acidentes em volta de sinais implantados antes e depois da
+    data de implantação, com um grupo de controle.
+
+    Tratados: locais onde um sinal da `categoria` foi implantado com `meses`
+    de dados antes e depois, sem outra implantação (de qualquer tipo) nas
+    redondezas dentro da janela. Controle: locais de sinais antigos da mesma
+    categoria, com datas de referência sorteadas entre as dos tratados e a
+    mesma exigência de não haver implantação por perto. O controle mostra a
+    tendência geral dos acidentes no período.
+
+    Devolve (locais, info): uma linha por local com os acidentes e os graves
+    antes e depois, e as contagens de cada etapa da seleção.
+    """
+    acidentes = acidentes.dropna(subset=["latitude", "longitude", "data"])
+    sinais = sinalizacao.dropna(subset=["latitude", "longitude", "implantacao"])
+    janela = int(round(meses * DIAS_POR_MES))
+
+    pontos_acidentes = projetar(acidentes)
+    dias_acidentes = _dias(acidentes["data"])
+    graves = acidentes["acidente_grave"].to_numpy()
+    primeiro, ultimo = dias_acidentes.min(), dias_acidentes.max()
+
+    pontos_sinais = projetar(sinais)
+    dias_sinais = _dias(sinais["implantacao"])
+    do_tipo = sinais["categoria"].to_numpy() == categoria
+    arvore_sinais = cKDTree(pontos_sinais)
+    arvore_acidentes = cKDTree(pontos_acidentes)
+
+    def sem_outra_implantacao(pontos, dias):
+        vizinhos = arvore_sinais.query_ball_point(pontos, raio)
+        limpos = np.zeros(len(pontos), dtype=bool)
+        for i, (vizinhos_do_ponto, dia) in enumerate(zip(vizinhos, dias)):
+            diferenca = np.abs(dias_sinais[vizinhos_do_ponto] - dia)
+            # Diferença zero é a própria obra (vários sinais no mesmo dia).
+            limpos[i] = not ((diferenca > 0) & (diferenca <= janela)).any()
+        return limpos
+
+    def contar(pontos, dias):
+        vizinhos = arvore_acidentes.query_ball_point(pontos, raio)
+        contagens = np.zeros((len(pontos), 4), dtype=int)
+        for i, (vizinhos_do_ponto, dia) in enumerate(zip(vizinhos, dias)):
+            posicao = np.asarray(vizinhos_do_ponto, dtype=int)
+            desvio = dias_acidentes[posicao] - dia
+            antes = (desvio >= -janela) & (desvio < 0)
+            depois = (desvio >= 0) & (desvio < janela)
+            grave = graves[posicao]
+            contagens[i] = (
+                antes.sum(), depois.sum(),
+                (antes & grave).sum(), (depois & grave).sum(),
+            )
+        return contagens
+
+    # Tratados
+    elegivel = (
+        do_tipo
+        & (dias_sinais >= primeiro + janela)
+        & (dias_sinais <= ultimo - janela)
+    )
+    posicoes = np.flatnonzero(elegivel)
+    escolhidos = posicoes[_um_por_celula(
+        pontos_sinais[posicoes], dias_sinais[posicoes]
+    )] if len(posicoes) else posicoes
+    pontos_tratados = pontos_sinais[escolhidos]
+    dias_tratados = dias_sinais[escolhidos]
+    limpos = (
+        sem_outra_implantacao(pontos_tratados, dias_tratados)
+        if len(escolhidos) else np.zeros(0, dtype=bool)
+    )
+    pontos_tratados, dias_tratados = pontos_tratados[limpos], dias_tratados[limpos]
+
+    # Controle
+    antigos = np.flatnonzero(do_tipo & (dias_sinais < primeiro))
+    escolhidos_controle = antigos[_um_por_celula(
+        pontos_sinais[antigos], dias_sinais[antigos]
+    )] if len(antigos) else antigos
+    sorteador = np.random.default_rng(semente)
+    if len(escolhidos_controle) > MAXIMO_CONTROLES:
+        escolhidos_controle = sorteador.choice(
+            escolhidos_controle, MAXIMO_CONTROLES, replace=False
+        )
+    pontos_controle = pontos_sinais[escolhidos_controle]
+    if len(dias_tratados) and len(escolhidos_controle):
+        dias_controle = sorteador.choice(dias_tratados, len(escolhidos_controle))
+        limpos_controle = sem_outra_implantacao(pontos_controle, dias_controle)
+        pontos_controle = pontos_controle[limpos_controle]
+        dias_controle = dias_controle[limpos_controle]
+    else:
+        pontos_controle = pontos_controle[:0]
+        dias_controle = np.zeros(0, dtype="int64")
+
+    info = {
+        "implantacoes_na_janela": int(len(posicoes)),
+        "locais_unicos": int(len(escolhidos)),
+        "locais_tratados": int(len(dias_tratados)),
+        "locais_controle": int(len(dias_controle)),
+    }
+
+    quadros = []
+    for rotulo, pontos, dias in (
+        (GRUPO_TRATADO, pontos_tratados, dias_tratados),
+        (GRUPO_CONTROLE, pontos_controle, dias_controle),
+    ):
+        if len(dias) == 0:
+            continue
+        quadro = pd.DataFrame(
+            contar(pontos, dias),
+            columns=["antes", "depois", "graves_antes", "graves_depois"],
+        )
+        quadro["grupo"] = rotulo
+        quadros.append(quadro)
+
+    locais = (
+        pd.concat(quadros, ignore_index=True)
+        if quadros
+        else pd.DataFrame(
+            columns=["antes", "depois", "graves_antes", "graves_depois", "grupo"]
+        )
+    )
+    return locais, info
+
+
+def resumir_antes_depois(locais):
+    """Totais por grupo, razão depois/antes e proporção de graves, cada um
+    com intervalo de confiança de 95%."""
+    linhas = []
+    for grupo, parte in locais.groupby("grupo", sort=False):
+        antes, depois = int(parte["antes"].sum()), int(parte["depois"].sum())
+        graves_antes = int(parte["graves_antes"].sum())
+        graves_depois = int(parte["graves_depois"].sum())
+        razao = depois / antes if antes else np.nan
+        # Erro-padrão do log da razão, tratando as contagens como Poisson.
+        erro = np.sqrt(1 / antes + 1 / depois) if antes and depois else np.nan
+        pct_antes_inf, pct_antes_sup = (
+            intervalo_wilson(graves_antes, antes) if antes else (np.nan, np.nan)
+        )
+        pct_depois_inf, pct_depois_sup = (
+            intervalo_wilson(graves_depois, depois) if depois else (np.nan, np.nan)
+        )
+        linhas.append({
+            "grupo": grupo,
+            "locais": len(parte),
+            "antes": antes,
+            "depois": depois,
+            "media_antes": antes / len(parte),
+            "media_depois": depois / len(parte),
+            "razao": razao,
+            "log_erro": erro,
+            "razao_inferior": razao * np.exp(-1.96 * erro),
+            "razao_superior": razao * np.exp(1.96 * erro),
+            "graves_antes": graves_antes,
+            "graves_depois": graves_depois,
+            "pct_graves_antes": graves_antes / antes * 100 if antes else np.nan,
+            "pct_graves_antes_inf": pct_antes_inf,
+            "pct_graves_antes_sup": pct_antes_sup,
+            "pct_graves_depois": graves_depois / depois * 100 if depois else np.nan,
+            "pct_graves_depois_inf": pct_depois_inf,
+            "pct_graves_depois_sup": pct_depois_sup,
+        })
+    return pd.DataFrame(linhas)
+
+
+def efeito_relativo(resumo):
+    """Razão depois/antes dos tratados dividida pela do controle, com
+    intervalo de 95%. Abaixo de 1: os acidentes caíram mais (ou subiram
+    menos) onde entrou o sinal. Devolve None sem os dois grupos."""
+    por_grupo = resumo.set_index("grupo")
+    if not {GRUPO_TRATADO, GRUPO_CONTROLE} <= set(por_grupo.index):
+        return None
+    tratado, controle = por_grupo.loc[GRUPO_TRATADO], por_grupo.loc[GRUPO_CONTROLE]
+    razao = tratado["razao"] / controle["razao"]
+    erro = np.sqrt(tratado["log_erro"] ** 2 + controle["log_erro"] ** 2)
+    return {
+        "razao": razao,
+        "inferior": razao * np.exp(-1.96 * erro),
+        "superior": razao * np.exp(1.96 * erro),
+    }

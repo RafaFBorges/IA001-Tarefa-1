@@ -811,3 +811,143 @@ def grafico_graves_por_distancia(proporcao):
     )
     barras, erros = _barras_com_erro(base, "Acidentes graves (%)", COR_NEUTRA)
     return alt.layer(barras, erros).properties(height=300)
+
+
+# ---------- antes e depois de uma implantação ----------
+
+COR_ANTES = "#9e9e9e"
+COR_DEPOIS = "#4c78a8"
+COR_EFEITO = "#f58518"
+ROTULO_EFEITO = "Efeito relativo (novo ÷ controle)"
+
+
+def _cor_periodo():
+    return alt.Color(
+        "periodo:N",
+        title=None,
+        sort=["Antes", "Depois"],
+        scale=alt.Scale(domain=["Antes", "Depois"], range=[COR_ANTES, COR_DEPOIS]),
+        legend=alt.Legend(orient="top"),
+    )
+
+
+def grafico_media_antes_depois(resumo, meses):
+    dados = pd.DataFrame([
+        {
+            "grupo": linha["grupo"],
+            "periodo": periodo,
+            "media": linha[f"media_{campo}"],
+            "total": linha[campo],
+            "locais": linha["locais"],
+        }
+        for _, linha in resumo.iterrows()
+        for periodo, campo in (("Antes", "antes"), ("Depois", "depois"))
+    ])
+    return (
+        alt.Chart(dados)
+        .mark_bar()
+        .encode(
+            x=alt.X(
+                "grupo:N",
+                title=None,
+                sort=list(resumo["grupo"]),
+                axis=alt.Axis(labelAngle=0, labelLimit=170),
+            ),
+            xOffset=alt.XOffset("periodo:N", sort=["Antes", "Depois"]),
+            y=alt.Y("media:Q", title=f"Acidentes por local em {meses} meses"),
+            color=_cor_periodo(),
+            tooltip=[
+                alt.Tooltip("grupo:N", title="Grupo"),
+                alt.Tooltip("periodo:N", title="Período"),
+                alt.Tooltip("media:Q", title="Acidentes por local", format=".2f"),
+                alt.Tooltip("total:Q", title="Acidentes", format=",.0f"),
+                alt.Tooltip("locais:Q", title="Locais", format=",.0f"),
+            ],
+        )
+        .properties(height=300)
+    )
+
+
+def grafico_razao_antes_depois(resumo, efeito):
+    linhas = [
+        {
+            "grupo": linha["grupo"],
+            "razao": linha["razao"],
+            "inferior": linha["razao_inferior"],
+            "superior": linha["razao_superior"],
+            "detalhe": f"{int(linha['antes'])} antes, {int(linha['depois'])} depois",
+        }
+        for _, linha in resumo.iterrows()
+    ]
+    if efeito is not None:
+        linhas.append({
+            "grupo": ROTULO_EFEITO,
+            "razao": efeito["razao"],
+            "inferior": efeito["inferior"],
+            "superior": efeito["superior"],
+            "detalhe": "razão do grupo com sinal novo ÷ razão do controle",
+        })
+    dados = pd.DataFrame(linhas)
+    ordem = list(dados["grupo"])
+
+    base = alt.Chart(dados).encode(
+        y=alt.Y("grupo:N", sort=ordem, title=None, axis=alt.Axis(labelLimit=230)),
+        color=alt.Color(
+            "grupo:N",
+            legend=None,
+            scale=alt.Scale(
+                domain=ordem,
+                range=[COR_DEPOIS, COR_ANTES, COR_EFEITO][: len(ordem)],
+            ),
+        ),
+        tooltip=[
+            alt.Tooltip("grupo:N", title="Grupo"),
+            alt.Tooltip("razao:Q", title="Razão", format=".2f"),
+            alt.Tooltip("inferior:Q", title="IC 95% inferior", format=".2f"),
+            alt.Tooltip("superior:Q", title="IC 95% superior", format=".2f"),
+            alt.Tooltip("detalhe:N", title="Detalhe"),
+        ],
+    )
+    pontos = base.mark_point(filled=True, size=110).encode(
+        x=alt.X("razao:Q", title="Acidentes depois ÷ antes (1 = sem mudança)",
+                scale=alt.Scale(zero=False)),
+    )
+    intervalos = base.mark_rule(strokeWidth=2).encode(x="inferior:Q", x2="superior:Q")
+    referencia = (
+        alt.Chart(pd.DataFrame({"x": [1]}))
+        .mark_rule(strokeDash=[4, 4], color=COR_VALOR)
+        .encode(x="x:Q")
+    )
+    return alt.layer(referencia, intervalos, pontos).properties(height=200)
+
+
+def grafico_graves_antes_depois(resumo):
+    dados = pd.DataFrame([
+        {
+            "grupo": linha["grupo"],
+            "periodo": periodo,
+            "n": linha[f"{campo}"],
+            "graves": linha[f"graves_{campo}"],
+            "pct": linha[f"pct_graves_{campo}"],
+            "inferior": linha[f"pct_graves_{campo}_inf"],
+            "superior": linha[f"pct_graves_{campo}_sup"],
+        }
+        for _, linha in resumo.iterrows()
+        for periodo, campo in (("Antes", "antes"), ("Depois", "depois"))
+    ])
+    base = alt.Chart(dados).encode(
+        x=alt.X(
+            "grupo:N",
+            title=None,
+            sort=list(resumo["grupo"]),
+            axis=alt.Axis(labelAngle=0, labelLimit=170),
+        ),
+        xOffset=alt.XOffset("periodo:N", sort=["Antes", "Depois"]),
+        tooltip=[
+            alt.Tooltip("grupo:N", title="Grupo"),
+            alt.Tooltip("periodo:N", title="Período"),
+            *_tooltip_metricas(),
+        ],
+    )
+    barras, erros = _barras_com_erro(base, "Acidentes graves (%)", _cor_periodo())
+    return alt.layer(barras, erros).properties(height=300)
