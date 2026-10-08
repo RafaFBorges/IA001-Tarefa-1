@@ -57,6 +57,8 @@ PAPEIS_VITIMA = {
 }
 ROTULO_PAPEL_NAO_INFORMADO = "Não informado"
 
+REGIOES = ["CENTRO", "LESTE", "NORTE", "SUL"]
+
 FAIXAS_DISTANCIA = [0, 5, 10, 25, 50, 100, 200, 500, np.inf]
 ROTULOS_DISTANCIA = [
     "< 5", "5–10", "10–25", "25–50", "50–100", "100–200", "200–500", "> 500",
@@ -209,3 +211,19 @@ def ligar_vitimas(vitimas, dados_relacao):
         .fillna(ROTULO_PAPEL_NAO_INFORMADO)
     )
     return ligadas
+
+
+def resumo_regioes(df):
+    """Acidentes, densidade mediana de sinais e proporção de graves por
+    região da cidade."""
+    resumo = (
+        df.groupby("regiao")
+        .agg(
+            acidentes=("acidente_grave", "size"),
+            sinais_mediana=("n_sinais", "median"),
+            graves_pct=("acidente_grave", lambda s: s.mean() * 100),
+        )
+        .reindex([r for r in REGIOES if r in set(df["regiao"])])
+    )
+    resumo.index = resumo.index.str.capitalize()
+    return resumo.rename_axis("Região")

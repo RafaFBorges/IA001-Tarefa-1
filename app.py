@@ -393,6 +393,64 @@ with aba_visao:
                 graficos.grafico_dias_uteis_fim_de_semana(filtrado)
             )
 
+@st.fragment
+def secao_regiao(dados, raio):
+    st.subheader("A região explica o padrão?")
+    st.caption(
+        "Cada região tem um nível diferente de sinalização e de gravidade, e "
+        "isso pode criar uma associação aparente. Aqui a densidade é separada "
+        "por região, com os mesmos grupos de densidade em todas elas. Barras "
+        "de erro: intervalo de confiança de 95%. Grupos com menos de "
+        f"{relacao.MINIMO_REGISTROS} acidentes são omitidos, o que acontece "
+        "quando uma região quase não tem locais com aquela densidade."
+    )
+
+    tipos = [graficos.ROTULO_TODOS_TIPOS] + [
+        t.capitalize() for t in graficos.TIPOS_COMPARADOS
+    ]
+    tipo = st.selectbox(
+        "Tipo de acidente",
+        tipos,
+        key="regiao_tipo",
+        help="Atropelamentos são muito mais graves; fixar o tipo separa esse efeito.",
+    )
+    if tipo != graficos.ROTULO_TODOS_TIPOS:
+        dados = dados[dados["tipo_acid"].eq(tipo.upper())]
+
+    dados = dados.dropna(subset=["regiao"])
+    if dados.empty:
+        st.info("Nenhum acidente para os filtros selecionados.")
+        return
+
+    st.dataframe(
+        relacao.resumo_regioes(dados),
+        column_config={
+            "acidentes": st.column_config.NumberColumn("Acidentes", format="%d"),
+            "sinais_mediana": st.column_config.NumberColumn(
+                f"Sinais em {raio} m (mediana)", format="%.0f"
+            ),
+            "graves_pct": st.column_config.NumberColumn(
+                "Acidentes graves (%)", format="%.1f"
+            ),
+        },
+        width="stretch",
+    )
+
+    dados_regiao = graficos.dados_graves_por_densidade(
+        dados,
+        coluna="regiao",
+        valores=relacao.REGIOES,
+        rotulo_todos="Todas as regiões",
+    )
+    if dados_regiao.empty:
+        st.info("Poucos acidentes para formar os grupos de densidade.")
+        return
+    st.altair_chart(
+        graficos.grafico_graves_por_densidade(dados_regiao, raio),
+        width="content",
+    )
+
+
 def bloco_pareamento(dados, raio, pares, unidade, chave, titulo):
     st.subheader(titulo)
     nome_par = st.selectbox("Par de análise", list(pares), key=chave)
@@ -562,6 +620,8 @@ with aba_relacao:
                     ),
                     width="content",
                 )
+
+            secao_regiao(dados_relacao, raio_sinalizacao)
 
             secao_pareamento(dados_relacao, raio_sinalizacao)
 
