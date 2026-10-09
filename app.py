@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 import pandas as pd
 import streamlit as st
@@ -29,6 +30,17 @@ ESTILO = """
     /* Título seguido de radio: 12 px entre o título e as opções. */
     [class*="st-key-linha_radio"] {
         gap: 12px !important;
+    }
+
+    /* Botões dos anos: o nome completo precisa caber na barra lateral. */
+    .st-key-botoes_anos button {
+        padding-left: 0.25rem;
+        padding-right: 0.25rem;
+        white-space: nowrap;
+    }
+    .st-key-botoes_anos button p {
+        font-size: 0.8rem;
+        white-space: nowrap;
     }
 
     /* Grade das categorias: 1 ou 2 colunas conforme a largura disponível.
@@ -129,17 +141,40 @@ if not anos:
     st.warning("Não há anos válidos disponíveis para exibição.")
     st.stop()
 
-anos_selecionados = st.sidebar.multiselect(
-    "Ano",
-    options=anos,
-    default=anos
-)
+def marcar_anos(valor):
+    """Callback dos botões: marca ou desmarca todos os anos de uma vez."""
+    for ano in anos:
+        st.session_state[f"ano_{ano}"] = valor
+
+
+# Uma caixa por ano, em no máximo duas linhas, da esquerda para a direita e
+# de cima para baixo. Todos começam marcados.
+for ano in anos:
+    st.session_state.setdefault(f"ano_{ano}", True)
+
+st.sidebar.markdown("Ano")
+colunas_por_linha = -(-len(anos) // 2)
+for inicio in range(0, len(anos), colunas_por_linha):
+    colunas_anos = st.sidebar.columns(colunas_por_linha)
+    for coluna, ano in zip(colunas_anos, anos[inicio:inicio + colunas_por_linha]):
+        coluna.checkbox(str(ano), key=f"ano_{ano}")
+
+anos_selecionados = [ano for ano in anos if st.session_state[f"ano_{ano}"]]
+
+with st.sidebar.container(key="botoes_anos"):
+    botao_todos, botao_nenhum = st.columns(2, gap="xsmall")
+    botao_todos.button(
+        "Selecionar tudo", on_click=marcar_anos, args=(True,), width="stretch"
+    )
+    botao_nenhum.button(
+        "Desmarcar tudo", on_click=marcar_anos, args=(False,), width="stretch"
+    )
 
 raio_sinalizacao = st.sidebar.slider(
     "Raio da sinalização (m)",
     min_value=0,
     max_value=300,
-    value=100,
+    value=15,
     step=1,
     help=(
         "Distância em volta de cada acidente usada para contar os sinais "
@@ -241,6 +276,41 @@ def mostrar_grafico(grafico):
 
 
 @st.fragment
+def mostrar_frequencia(dados, coluna, chave, titulo=None, titulo_grande=False):
+    """Gráfico de frequência horizontal com um toggle de escala logarítmica
+    (desligado por padrão) ao lado do título e um aviso quando há categorias
+    muito pequenas. É um fragmento: ligar o toggle reexecuta só este gráfico."""
+    chave = re.sub(r"\W+", "_", chave)
+    with st.container(
+        horizontal=True,
+        vertical_alignment="center",
+        gap=None,
+        key=f"linha_radio_log_{chave}",
+    ):
+        if titulo:
+            if titulo_grande:
+                st.subheader(titulo, width="content")
+            else:
+                st.markdown(f"**{titulo}**", width="content")
+        escala_log = st.toggle("Escala logarítmica", key=f"log_{chave}")
+        if graficos.tem_categorias_muito_pequenas(dados, coluna):
+            st.caption(
+                "Há categorias muito pequenas; a escala logarítmica ajuda a "
+                "vê-las, mas as barras deixam de ser proporcionais."
+            )
+    mostrar_grafico(
+        graficos.grafico_frequencia(
+            dados,
+            coluna,
+            cor_texto=cor_do_texto(),
+            mostrar_titulo=False,
+            horizontal=True,
+            escala_log=escala_log,
+        )
+    )
+
+
+@st.fragment
 def mostrar_heatmap_dia_hora(dados):
     st.subheader("Distribuição de acidentes por dia da semana e horário")
 
@@ -322,15 +392,13 @@ def renderizar_analise(conjuntos):
 
         with st.container(key="grade_categorias"):
             for indice, coluna in enumerate(colunas):
-                larga = graficos.precisa_largura_total(dados, coluna)
+                larga = graficos.precisa_largura_total(
+                    dados, coluna, horizontal=True
+                )
                 sufixo = "larga" if larga else "normal"
                 with st.container(key=f"categoria_{sufixo}_{indice}"):
-                    mostrar_grafico(
-                        graficos.grafico_frequencia(
-                            dados,
-                            coluna,
-                            cor_texto=cor_do_texto(),
-                        )
+                    mostrar_frequencia(
+                        dados, coluna, f"{nome}_{coluna}", titulo=coluna
                     )
 
     with aba_distribuicao:
@@ -445,18 +513,16 @@ with aba_visao:
                 )
             )
 
-    st.subheader("Acidentes por tipo")
-
     if filtrado.empty:
+        st.subheader("Acidentes por tipo")
         st.info("Nenhum acidente para os filtros selecionados.")
     elif "tipo_acid" in filtrado.columns:
-        mostrar_grafico(
-            graficos.grafico_frequencia(
-                filtrado,
-                "tipo_acid",
-                cor_texto=cor_do_texto(),
-                mostrar_titulo=False,
-            )
+        mostrar_frequencia(
+            filtrado,
+            "tipo_acid",
+            "visao_tipo_acid",
+            titulo="Acidentes por tipo",
+            titulo_grande=True,
         )
 
     if not filtrado.empty:

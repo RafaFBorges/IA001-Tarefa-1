@@ -76,7 +76,7 @@ http://localhost:8501
 
 **Barra lateral** (vale para o dashboard inteiro, salvo indicação):
 
-- **Ano:** seleção de um ou mais anos;
+- **Ano:** uma caixa de seleção por ano, em duas linhas (da esquerda para a direita e de cima para baixo), todas marcadas no início, com os botões "Selecionar tudo" e "Desmarcar tudo";
 - **Mostrar somente acidentes graves:** não se aplica à aba "Sinalização × Acidentes", que compara graves com os demais;
 - **Ir para a pergunta:** cinco atalhos, logo abaixo desse filtro, que abrem a aba "Sinalização × Acidentes" na subaba da pergunta escolhida;
 - **Raio da sinalização (m):** de 0 a 300 m, de 1 em 1, usado para contar os sinais próximos de cada acidente. Vale só para a aba "Sinalização × Acidentes". Um mapa pequeno mostra o círculo do raio, em escala, em volta do Mercado Público de Porto Alegre.

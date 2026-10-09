@@ -226,7 +226,15 @@ def grafico_frequencia(
     max_categorias_rotulo_horizontal=6,
     cor_texto=COR_VALOR,
     mostrar_titulo=True,
+    horizontal=False,
+    escala_log=False,
 ):
+    """Frequência de cada categoria. Com `horizontal=True`, as barras ficam
+    na horizontal, com os nomes retos à esquerda e ocupando a largura
+    inteira (não há legenda lateral: os nomes já estão no eixo). Com
+    `escala_log=True` (só na versão horizontal), o eixo usa escala symlog:
+    comprime as barras grandes e mantém o zero como base, mas as barras
+    deixam de ser proporcionais à quantidade."""
     contagem = (
         df[coluna]
         .astype("string")
@@ -295,6 +303,83 @@ def grafico_frequencia(
         alt.Tooltip("percentual:Q", title="Percentual (%)", format=".2f"),
     ]
 
+    estilo_valor = {
+        "color": cor_texto,
+        "fontSize": 12,
+        "fontWeight": "bold",
+    }
+    texto_titulo = coluna if mostrar_titulo else ""
+    titulo = alt.TitleParams(texto_titulo) if mostrar_titulo else None
+    if nulos:
+        titulo = alt.TitleParams(
+            texto_titulo,
+            subtitle=(
+                f"Fora do gráfico: {formatar_inteiro(nulos)} nulos / não "
+                f"informados ({formatar_percentual(nulos / len(df) * 100)} "
+                "dos registros). Percentuais sobre os preenchidos."
+            ),
+            subtitleColor="gray",
+        )
+
+    if horizontal:
+        maximo = float(contagem["quantidade"].max())
+        if escala_log:
+            # Na escala symlog a posição cresce com log(1 + valor): o limite
+            # é calculado para sobrar cerca de 14% da largura para os rótulos.
+            limite = (1 + maximo) ** 1.14 - 1
+            escala_x = alt.Scale(type="symlog", constant=1, domain=[0, limite])
+            marcas = [0] + [10**k for k in range(8) if 10**k <= limite]
+            eixo_x = alt.Axis(values=marcas, format=",.0f")
+            titulo_x = "Quantidade de registros (escala logarítmica)"
+        else:
+            escala_x = alt.Scale(domain=[0, maximo * 1.22])
+            eixo_x = alt.Axis()
+            titulo_x = "Quantidade de registros"
+        base_h = alt.Chart(contagem).encode(
+            y=alt.Y(
+                "categoria:N",
+                sort=categorias,
+                title=None,
+                axis=alt.Axis(
+                    labelAngle=0,
+                    labelLimit=min(280, 12 + 7 * max(len(c) for c in categorias)),
+                    labelOverlap=False,
+                ),
+            ),
+            x=alt.X(
+                "quantidade:Q",
+                title=titulo_x,
+                scale=escala_x,
+                axis=eixo_x,
+            ),
+            tooltip=tooltip,
+        )
+        barras_h = (
+            base_h.mark_bar(
+                stroke=COR_DESTAQUE,
+                cornerRadiusTopRight=2,
+                cornerRadiusBottomRight=2,
+            )
+            .encode(
+                color=alt.Color("categoria:N", scale=escala_cor, legend=None),
+                opacity=opacidade,
+                strokeWidth=alt.when(destaque, empty=False)
+                .then(alt.value(3))
+                .otherwise(alt.value(0)),
+            )
+            .add_params(destaque)
+        )
+        valores_h = base_h.mark_text(
+            align="left", baseline="middle", dx=6, **estilo_valor
+        ).encode(text="rotulo:N", opacity=opacidade)
+        grafico_h = alt.layer(barras_h, valores_h).properties(
+            height=max(170, 36 * quantidade_categorias + 110),
+            padding={"left": 5, "top": 5, "bottom": 5, "right": 5},
+        )
+        return (
+            grafico_h.properties(title=titulo) if titulo is not None else grafico_h
+        )
+
     base = alt.Chart(contagem).encode(
         x=alt.X(
             "categoria:N",
@@ -337,11 +422,6 @@ def grafico_frequencia(
         .add_params(destaque)
     )
 
-    estilo_valor = {
-        "color": cor_texto,
-        "fontSize": 12,
-        "fontWeight": "bold",
-    }
     if rotulos_na_horizontal:
         valores = base.mark_text(dy=-8, **estilo_valor)
     else:
@@ -380,19 +460,6 @@ def grafico_frequencia(
     if quantidade_categorias > 14:
         altura = 640
 
-    texto_titulo = coluna if mostrar_titulo else ""
-    titulo = alt.TitleParams(texto_titulo) if mostrar_titulo else None
-    if nulos:
-        titulo = alt.TitleParams(
-            texto_titulo,
-            subtitle=(
-                f"Fora do gráfico: {formatar_inteiro(nulos)} nulos / não "
-                f"informados ({formatar_percentual(nulos / len(df) * 100)} "
-                "dos registros). Percentuais sobre os preenchidos."
-            ),
-            subtitleColor="gray",
-        )
-
     grafico = alt.layer(barras, valores, simbolos, nomes).properties(
         height=altura,
         padding={"left": 5, "top": 5, "bottom": 5, "right": largura_legenda},
@@ -400,7 +467,16 @@ def grafico_frequencia(
     return grafico.properties(title=titulo) if titulo is not None else grafico
 
 
-def precisa_largura_total(df, coluna):
+def tem_categorias_muito_pequenas(df, coluna, limite=0.01):
+    """Verdadeiro quando a menor categoria tem menos de `limite` (1%) da
+    maior: nesse caso a escala logarítmica ajuda a enxergá-la."""
+    contagem = df[coluna].astype("string").dropna().value_counts()
+    if len(contagem) < 2:
+        return False
+    return contagem.min() < limite * contagem.max()
+
+
+def precisa_largura_total(df, coluna, horizontal=False):
     categorias = (
         df[coluna]
         .astype("string")
@@ -412,6 +488,10 @@ def precisa_largura_total(df, coluna):
         return False
 
     maior_nome = min(max(len(c) for c in categorias), LIMITE_NOME_LEGENDA)
+    if horizontal:
+        # Barras horizontais crescem na altura com o número de categorias; a
+        # largura só importa para o espaço dos nomes à esquerda.
+        return 300 + 7 * maior_nome > LARGURA_COLUNA_GRADE
     largura_legenda = 44 + 7 * maior_nome
     largura_estimada = 70 + largura_legenda + 26 * len(categorias)
     return largura_estimada > LARGURA_COLUNA_GRADE
