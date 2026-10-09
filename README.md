@@ -84,7 +84,12 @@ http://localhost:8501
 
 - **Visão geral:** indicadores, acidentes por ano, vítimas fatais por ano, acidentes por tipo, mês e dias úteis × fim de semana. O mapa de calor por dia da semana e horário tem filtros próprios de **tipo de acidente** e **somente acidentes com vítimas**, além do piso da escala de cores.
 - **Mapas:** painel "Visualização" no mapa para alternar entre os pontos dos acidentes, o mapa de calor e a sinalização (agrupada por categoria e por zoom), e botão para centralizar o mapa.
-- **Sinalização × Acidentes:** resumo por categoria de sinal, densidade de sinais por tipo de acidente e por região, razão ajustada, combinações de sinalização (com seletor de quantas mostrar), pares de sinal e ocorrência, mapa dos acidentes graves, ranking de pontos críticos (tamanho da área, ordenação, mínimo de graves, quantidade e download em CSV), distância ao sinal mais próximo, horário (dia e noite), antes e depois da implantação (categoria e janela de 6 a 24 meses) e vítimas (com opção de considerar só acidentes com uma vítima).
+- **Sinalização × Acidentes:** cinco subabas, uma para cada pergunta do projeto, cada uma com o texto da pergunta e os gráficos que a respondem.
+  - **1. Tipos e conjuntos:** resumo por categoria de sinal, combinações de sinalização (com seletor de quantas mostrar), pares de sinal e ocorrência e antes e depois da implantação (categoria e janela de 6 a 24 meses).
+  - **2. Zonas e distância:** mapa dos acidentes graves, ranking de pontos críticos (tamanho da área, ordenação, mínimo de graves, quantidade e download em CSV) e distância ao sinal mais próximo.
+  - **3. Densidade:** densidade de sinais por tipo de acidente e por região (com seletor de tipo) e razão ajustada.
+  - **4. Horário:** comparação entre dia e noite e as marcações e placas (o mapa de calor por dia e horário fica na aba Visão geral).
+  - **5. Vítimas:** vítimas por papel e densidade, pares de vítima e sinal e a opção de considerar só acidentes com uma vítima.
 - **Análise de dados:** frequências por categoria e distribuições das variáveis numéricas, com escolha da base (acidentes, vítimas ou sinalização).
 - **Dados:** tabelas de acidentes, sinalização e vítimas, em duas visões: **Filtrado** (base tratada, com os filtros da barra lateral) e **Completo** (CSV original, sem tratamento).
 
