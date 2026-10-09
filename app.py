@@ -94,6 +94,28 @@ except Exception as erro:
     st.error(f"Não foi possível carregar os dados: {erro}")
     st.stop()
 
+ABA_SINALIZACAO = "Sinalização × Acidentes"
+SUBABAS = {
+    1: "Tipos e conjuntos",
+    2: "Zonas e distância",
+    3: "Densidade",
+    4: "Horário",
+    5: "Vítimas",
+}
+
+
+def ir_para_pergunta(numero):
+    """Atalho da barra lateral: abre a aba Sinalização × Acidentes na subaba
+    da pergunta. Roda como callback, antes de as abas serem desenhadas."""
+    st.session_state["aba_principal"] = ABA_SINALIZACAO
+    st.session_state["aba_perguntas"] = SUBABAS[numero]
+
+
+# Uma aba fechada não é desenhada e o Streamlit esqueceria qual subaba estava
+# aberta; reatribuir o valor a cada execução a mantém.
+if "aba_perguntas" in st.session_state:
+    st.session_state["aba_perguntas"] = st.session_state["aba_perguntas"]
+
 st.sidebar.header("Filtros")
 
 anos = sorted(
@@ -145,6 +167,16 @@ with st.sidebar:
 apenas_graves = st.sidebar.checkbox(
     "Mostrar somente acidentes graves"
 )
+
+st.sidebar.markdown("**Ir para a pergunta**")
+for numero, nome in SUBABAS.items():
+    st.sidebar.button(
+        f"Pergunta {numero}: {nome}",
+        key=f"ir_pergunta_{numero}",
+        on_click=ir_para_pergunta,
+        args=(numero,),
+        type="tertiary",
+    )
 
 filtrado = df[
     df["ano"].isin(anos_selecionados)
@@ -342,7 +374,8 @@ def renderizar_analise(conjuntos):
 
 
 aba_visao, aba_mapa, aba_relacao, aba_analise, aba_dados = st.tabs(
-    ["Visão geral", "Mapas", "Sinalização × Acidentes", "Análise de dados", "Dados"],
+    ["Visão geral", "Mapas", ABA_SINALIZACAO, "Análise de dados", "Dados"],
+    key="aba_principal",
     on_change="rerun",
 )
 
@@ -1127,13 +1160,8 @@ def abas_perguntas(dados, raio, anos):
             st.session_state[chave] = st.session_state[chave]
 
     aba1, aba2, aba3, aba4, aba5 = st.tabs(
-        [
-            "1. Tipos e conjuntos",
-            "2. Zonas e distância",
-            "3. Densidade",
-            "4. Horário",
-            "5. Vítimas",
-        ],
+        list(SUBABAS.values()),
+        key="aba_perguntas",
         on_change="rerun",
     )
 
