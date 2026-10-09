@@ -699,6 +699,42 @@ def grafico_graves_por_densidade(dados, raio, unidade="acidentes"):
     )
 
 
+def grafico_graves_por_densidade_agrupado(
+    dados, raio, unidade="acidentes", legenda="Grupo"
+):
+    """Mesma proporção de graves por grupo de densidade, mas com as séries
+    (por exemplo, as regiões) lado a lado em um único gráfico que ocupa a
+    largura da página, e não em facetas. A primeira série é o total e fica
+    em cinza."""
+    ordem_grupos = list(dict.fromkeys(dados["grupo"]))
+    ordem_series = list(dict.fromkeys(dados["tipo"]))
+    cores = [COR_VALOR] + PALETA_BASE[: len(ordem_series) - 1]
+
+    base = alt.Chart(dados).encode(
+        x=alt.X(
+            "grupo:N",
+            sort=ordem_grupos,
+            title=f"Sinais em até {raio} m do acidente",
+            axis=alt.Axis(labelAngle=0),
+        ),
+        xOffset=alt.XOffset("tipo:N", sort=ordem_series),
+        tooltip=[
+            alt.Tooltip("tipo:N", title=legenda),
+            alt.Tooltip("grupo:N", title="Sinais no raio"),
+            *_tooltip_metricas(unidade),
+        ],
+    )
+    cor = alt.Color(
+        "tipo:N",
+        title=legenda,
+        sort=ordem_series,
+        scale=alt.Scale(domain=ordem_series, range=cores),
+        legend=alt.Legend(orient="top"),
+    )
+    barras, erros = _barras_com_erro(base, UNIDADES[unidade]["pct"], cor)
+    return alt.layer(barras, erros).properties(height=360)
+
+
 def dados_pareamento(df, selecao, categoria):
     """Proporção de graves com e sem sinais da categoria no raio, no total
     e dentro de cada grupo de densidade (para separar o efeito da

@@ -491,9 +491,10 @@ def secao_regiao(dados, raio):
     if dados_regiao.empty:
         st.info("Poucos acidentes para formar os grupos de densidade.")
         return
-    st.altair_chart(
-        graficos.grafico_graves_por_densidade(dados_regiao, raio),
-        width="content",
+    mostrar_grafico(
+        graficos.grafico_graves_por_densidade_agrupado(
+            dados_regiao, raio, legenda="Região"
+        )
     )
 
 
