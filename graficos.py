@@ -676,10 +676,43 @@ def grafico_graves_por_densidade_agrupado(
     """Mesma proporção de graves por grupo de densidade, mas com as séries
     (por exemplo, as regiões) lado a lado em um único gráfico que ocupa a
     largura da página, e não em facetas. A primeira série é o total e fica
-    em cinza."""
+    em cinza.
+
+    Ao passar o mouse sobre uma barra ou sobre a legenda, todas as barras da
+    série ficam em destaque e as demais esmaecem. A legenda é desenhada
+    dentro do gráfico (a nativa do Altair só reage ao clique) para barras e
+    legenda compartilharem a mesma seleção."""
     ordem_grupos = list(dict.fromkeys(dados["grupo"]))
     ordem_series = list(dict.fromkeys(dados["tipo"]))
     cores = [COR_VALOR] + PALETA_BASE[: len(ordem_series) - 1]
+
+    # Uma seleção para as barras e outra para a legenda (cada camada só
+    # escuta os eventos das próprias marcas). Sem nenhuma ativa, tudo fica
+    # opaco; com uma ativa, só a série escolhida.
+    sobre_barra = alt.selection_point(
+        name="destaque_barra", fields=["tipo"], on="pointerover",
+        clear="pointerout", empty=False,
+    )
+    sobre_legenda = alt.selection_point(
+        name="destaque_legenda", fields=["tipo"], on="pointerover",
+        clear="pointerout", empty=False,
+    )
+    opacidade = (
+        alt.when(
+            "length(data('destaque_barra_store')) == 0"
+            " && length(data('destaque_legenda_store')) == 0"
+        )
+        .then(alt.value(1))
+        .when(sobre_barra | sobre_legenda)
+        .then(alt.value(1))
+        .otherwise(alt.value(0.22))
+    )
+    cor = alt.Color(
+        "tipo:N",
+        sort=ordem_series,
+        scale=alt.Scale(domain=ordem_series, range=cores),
+        legend=None,
+    )
 
     base = alt.Chart(dados).encode(
         x=alt.X(
@@ -689,21 +722,41 @@ def grafico_graves_por_densidade_agrupado(
             axis=alt.Axis(labelAngle=0),
         ),
         xOffset=alt.XOffset("tipo:N", sort=ordem_series),
+        opacity=opacidade,
         tooltip=[
             alt.Tooltip("tipo:N", title=legenda),
             alt.Tooltip("grupo:N", title="Sinais no raio"),
             *_tooltip_metricas(unidade),
         ],
     )
-    cor = alt.Color(
-        "tipo:N",
-        title=legenda,
-        sort=ordem_series,
-        scale=alt.Scale(domain=ordem_series, range=cores),
-        legend=alt.Legend(orient="top"),
-    )
     barras, erros = _barras_com_erro(base, UNIDADES[unidade]["pct"], cor)
-    return alt.layer(barras, erros).properties(height=360)
+
+    # Legenda no alto do gráfico, em pixels, cada item após o anterior. Cada
+    # item é um só texto ("■ nome") na cor da série, fácil de apontar.
+    posicao, itens = 0, []
+    for nome in ordem_series:
+        itens.append({"tipo": nome, "px": posicao, "item": f"■ {nome}"})
+        posicao += 30 + 7.2 * len(nome)
+    legenda_itens = (
+        alt.Chart(pd.DataFrame(itens))
+        .mark_text(align="left", baseline="middle", fontSize=13, fontWeight="bold")
+        .encode(
+            x=alt.X("px:Q", scale=None, axis=None),
+            y=alt.value(-18),
+            text="item:N",
+            color=cor,
+            opacity=opacidade,
+        )
+    )
+
+    return (
+        alt.layer(
+            barras.add_params(sobre_barra),
+            erros,
+            legenda_itens.add_params(sobre_legenda),
+        )
+        .properties(height=360, padding={"top": 34, "left": 5, "right": 12, "bottom": 5})
+    )
 
 
 def dados_pareamento(df, selecao, categoria):
