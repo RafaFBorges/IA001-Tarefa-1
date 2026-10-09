@@ -32,6 +32,31 @@ ESTILO = """
         gap: 12px !important;
     }
 
+    /* Barra lateral compacta: o conteúdo todo cabe sem rolagem. */
+    [data-testid="stSidebarHeader"] {
+        height: 2.5rem;
+        padding-top: 0.5rem;
+        padding-bottom: 0;
+    }
+    [data-testid="stSidebarUserContent"] {
+        padding-top: 0;
+        padding-bottom: 0.5rem;
+    }
+    [data-testid="stSidebarUserContent"] [data-testid="stVerticalBlock"] {
+        gap: 0.4rem;
+    }
+    [data-testid="stSidebarUserContent"] h2 {
+        padding: 0 0 0.5rem;
+    }
+    [data-testid="stSidebarUserContent"] [data-testid="stCaptionContainer"] p {
+        line-height: 1.3;
+    }
+    [class*="st-key-ir_pergunta_"] button {
+        min-height: 1.6rem;
+        padding-top: 0;
+        padding-bottom: 0;
+    }
+
     /* Botões dos anos: o nome completo precisa caber na barra lateral. */
     .st-key-botoes_anos button {
         padding-left: 0.25rem;
@@ -189,7 +214,7 @@ with st.sidebar:
     st_folium(
         mapas.mapa_referencia_raio(raio_sinalizacao),
         width=None,
-        height=220,
+        height=150,
         key="mapa_raio",
         center=mapas.MERCADO_PUBLICO,
         zoom=mapas.zoom_para_raio(raio_sinalizacao),
