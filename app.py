@@ -734,9 +734,10 @@ def secao_vitimas(dados, raio):
     if dados_papel.empty:
         st.info("Poucas vítimas para formar os grupos de densidade.")
     else:
-        st.altair_chart(
-            graficos.grafico_graves_por_densidade(dados_papel, raio, "vítimas"),
-            width="content",
+        mostrar_grafico(
+            graficos.grafico_graves_por_densidade_agrupado(
+                dados_papel, raio, "vítimas", legenda="Papel da vítima"
+            )
         )
 
     bloco_pareamento(
@@ -1068,9 +1069,10 @@ def secao_densidade(dados, raio):
     if dados_densidade.empty:
         st.info("Poucos acidentes para formar os grupos de densidade.")
         return
-    st.altair_chart(
-        graficos.grafico_graves_por_densidade(dados_densidade, raio),
-        width="content",
+    mostrar_grafico(
+        graficos.grafico_graves_por_densidade_agrupado(
+            dados_densidade, raio, legenda="Tipo de acidente"
+        )
     )
 
 

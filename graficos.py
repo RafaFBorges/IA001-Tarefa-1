@@ -670,35 +670,6 @@ def dados_graves_por_densidade(
     return dados
 
 
-def grafico_graves_por_densidade(dados, raio, unidade="acidentes"):
-    ordem_grupos = list(dict.fromkeys(dados["grupo"]))
-    ordem_tipos = list(dict.fromkeys(dados["tipo"]))
-
-    base = alt.Chart(dados).encode(
-        x=alt.X(
-            "grupo:N",
-            sort=ordem_grupos,
-            title=f"Sinais em até {raio} m do acidente",
-            axis=alt.Axis(labelAngle=0),
-        ),
-        tooltip=[
-            alt.Tooltip("grupo:N", title="Sinais no raio"),
-            *_tooltip_metricas(unidade),
-        ],
-    )
-    barras, erros = _barras_com_erro(base, UNIDADES[unidade]["pct"], COR_NEUTRA)
-
-    return (
-        alt.layer(barras, erros)
-        .properties(width=150, height=170)
-        .facet(
-            facet=alt.Facet("tipo:N", sort=ordem_tipos, title=None),
-            columns=3,
-        )
-        .resolve_scale(y="shared")
-    )
-
-
 def grafico_graves_por_densidade_agrupado(
     dados, raio, unidade="acidentes", legenda="Grupo"
 ):
