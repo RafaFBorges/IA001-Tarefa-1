@@ -6,24 +6,30 @@ Dashboard interativo desenvolvido com Streamlit para explorar acidentes de trân
 
 A aplicação permite analisar:
 
-- quantidade de acidentes por ano;
-- acidentes graves;
-- quantidade de feridos e mortes;
-- distribuição dos acidentes por tipo;
-- concentração espacial das ocorrências;
-- dados filtrados por período e gravidade;
-- relação espacial entre acidentes e sinalização gráfica (aba "Sinalização × Acidentes"), com raio ajustável na barra lateral.
+- quantidade de acidentes por ano, tipo, mês, dia da semana e horário;
+- acidentes graves, feridos e mortes;
+- concentração espacial das ocorrências (pontos, mapa de calor e sinalização);
+- dados das três bases (acidentes, sinalização gráfica e vítimas), filtrados ou completos;
+- relação entre os acidentes e a sinalização gráfica próxima (aba "Sinalização × Acidentes"): densidade e combinações de sinais, razões ajustadas, distância ao sinal mais próximo, horário, antes e depois de uma implantação, vítimas e ranking de pontos críticos para priorização.
 
 ## Estrutura do projeto
 
 ```text
 IA001.1/
-├── app.py
+├── app.py                      # aplicação Streamlit (abas, filtros e textos)
+├── pipeline_dados.py           # leitura e tratamento das três bases
+├── graficos.py                 # gráficos (Altair)
+├── mapas.py                    # mapas (Folium)
+├── relacao_espacial.py         # relação espacial acidentes × sinalização e estatísticas
 ├── atividade01_proposta_analise_visual.ipynb
 ├── requirements.txt
+├── .streamlit/config.toml      # configuração do Streamlit
 ├── dados/
-│   └── cat_acidentes.csv
-└── maps/
+│   ├── cat_acidentes.csv       # acidentes de trânsito
+│   ├── cat_vitimas.csv         # vítimas de acidentes
+│   └── websin.csv              # sinalização gráfica
+├── doc/                        # dicionários de dados (PDF) das três bases
+└── maps/                       # mapa exportado pelo notebook
 ```
 
 ## Requisitos
@@ -43,11 +49,9 @@ pip install -r requirements.txt
 
 ## Execução
 
-Rodar todas as células na sequencia.
+Pelo notebook: executar todas as células em sequência. A célula da seção 5.7 inicia o Streamlit e, se já houver um rodando na porta 8501, encerra e inicia de novo para exibir a versão mais recente do código.
 
-ou 
-
-Com o ambiente virtual ativado:
+Ou, com o ambiente virtual ativado:
 
 ```bash
 streamlit run app.py
@@ -61,10 +65,19 @@ http://localhost:8501
 
 ## Interações disponíveis
 
-O dashboard possui filtros para:
+**Barra lateral** (vale para o dashboard inteiro, salvo indicação):
 
-- selecionar o ano;
-- visualizar todos os acidentes ou somente acidentes graves.
+- **Ano:** seleção de um ou mais anos;
+- **Mostrar somente acidentes graves:** não se aplica à aba "Sinalização × Acidentes", que compara graves com os demais;
+- **Raio da sinalização (m):** de 0 a 300 m, de 1 em 1, usado para contar os sinais próximos de cada acidente. Vale só para a aba "Sinalização × Acidentes". Um mapa pequeno mostra o círculo do raio, em escala, em volta do Mercado Público de Porto Alegre.
+
+**Abas:**
+
+- **Visão geral:** indicadores, acidentes por ano, vítimas fatais por ano, acidentes por tipo, mês e dias úteis × fim de semana. O mapa de calor por dia da semana e horário tem filtros próprios de **tipo de acidente** e **somente acidentes com vítimas**, além do piso da escala de cores.
+- **Mapas:** painel "Visualização" no mapa para alternar entre os pontos dos acidentes, o mapa de calor e a sinalização (agrupada por categoria e por zoom), e botão para centralizar o mapa.
+- **Sinalização × Acidentes:** resumo por categoria de sinal, densidade de sinais por tipo de acidente e por região, razão ajustada, combinações de sinalização (com seletor de quantas mostrar), pares de sinal e ocorrência, mapa dos acidentes graves, ranking de pontos críticos (tamanho da área, ordenação, mínimo de graves, quantidade e download em CSV), distância ao sinal mais próximo, horário (dia e noite), antes e depois da implantação (categoria e janela de 6 a 24 meses) e vítimas (com opção de considerar só acidentes com uma vítima).
+- **Análise de dados:** frequências por categoria e distribuições das variáveis numéricas, com escolha da base (acidentes, vítimas ou sinalização).
+- **Dados:** tabelas de acidentes, sinalização e vítimas, em duas visões: **Filtrado** (base tratada, com os filtros da barra lateral) e **Completo** (CSV original, sem tratamento).
 
 Quando uma combinação de filtros não possui registros, a aplicação informa o usuário.
 
@@ -108,11 +121,12 @@ Portanto, a aplicação não permite concluir que determinado tipo de sinalizaç
 ## Tecnologias utilizadas
 
 - Python
-- Pandas
+- Pandas e NumPy
 - Streamlit
-- Folium
-- Streamlit-Folium
+- Altair (gráficos)
+- Folium e Streamlit-Folium (mapas)
 - SciPy (busca espacial dos sinais próximos a cada acidente)
+- Matplotlib e Seaborn (análises do notebook)
 
 ## Autoria
 
