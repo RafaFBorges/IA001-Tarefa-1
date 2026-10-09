@@ -1081,12 +1081,27 @@ SERIE_ENTRE_LOCAIS = "Comparação entre locais (ajustada)"
 SERIE_ANTES_DEPOIS = "Antes e depois da implantação"
 
 
-def _referencia_em_um():
+def _referencia_em_um(escala=None):
     return (
         alt.Chart(pd.DataFrame({"x": [1]}))
         .mark_rule(strokeDash=[4, 4], color=COR_VALOR)
-        .encode(x="x:Q")
+        .encode(x=alt.X("x:Q", scale=escala if escala is not None else alt.Undefined))
     )
+
+
+MARCAS_RAZAO = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.2, 1.5, 2, 3, 4, 5, 8]
+
+
+def _escala_logaritmica_razao(*colunas, folga=1.08):
+    """Escala logarítmica para razões (comparam-se multiplicativamente: 0,5 e
+    2 ficam à mesma distância de 1) ajustada aos dados, com marcas em valores
+    redondos."""
+    valores = pd.concat([pd.to_numeric(c, errors="coerce") for c in colunas]).dropna()
+    valores = valores[valores > 0]
+    minimo = min(valores.min(), 1) / folga
+    maximo = max(valores.max(), 1) * folga
+    marcas = [m for m in MARCAS_RAZAO if minimo <= m <= maximo]
+    return alt.Scale(type="log", domain=[minimo, maximo]), marcas
 
 
 def grafico_razao_por_categoria(dados):
@@ -1117,15 +1132,21 @@ def grafico_razao_por_categoria(dados):
             alt.Tooltip("superior:Q", title="IC 95% superior", format=".2f"),
         ],
     )
+    escala, marcas = _escala_logaritmica_razao(
+        dados["razao"], dados["inferior"], dados["superior"]
+    )
     pontos = base.mark_point(filled=True, size=90).encode(
         x=alt.X(
             "razao:Q",
-            title="Razão de acidentes graves (1 = sem diferença; abaixo de 1 = menos graves)",
-            scale=alt.Scale(zero=False),
+            title="Razão de acidentes graves (escala logarítmica; 1 = sem diferença; abaixo de 1 = menos graves)",
+            scale=escala,
+            axis=alt.Axis(values=marcas, format=".1f"),
         )
     )
-    intervalos = base.mark_rule(strokeWidth=2).encode(x="inferior:Q", x2="superior:Q")
-    return alt.layer(_referencia_em_um(), intervalos, pontos).properties(
+    intervalos = base.mark_rule(strokeWidth=2).encode(
+        x=alt.X("inferior:Q", scale=escala), x2="superior:Q"
+    )
+    return alt.layer(_referencia_em_um(escala), intervalos, pontos).properties(
         height=max(260, 46 * len(ordem))
     )
 
