@@ -1,9 +1,10 @@
-pandas
-numpy
-matplotlib
-seaborn
-altair
-folium
-streamlit
-streamlit-folium
-scipy
+# Versões testadas com Python 3.10 (instalação limpa, app e notebook executados).
+pandas==2.3.3
+numpy==2.2.6
+matplotlib==3.10.9
+seaborn==0.13.2
+altair==6.2.2
+folium==0.20.0
+streamlit==1.64.0
+streamlit-folium==0.26.2
+scipy==1.15.3

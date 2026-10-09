@@ -34,8 +34,9 @@ IA001.1/
 
 ## Requisitos
 
-- Python 3.10 ou superior
+- Python 3.10 ou superior (testado com Python 3.10)
 - pip
+- Em Debian e Ubuntu, o pacote `python3-venv` (para criar o ambiente virtual)
 
 ## Instalação
 
@@ -46,6 +47,14 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
+
+Se o primeiro comando falhar com a mensagem "ensurepip is not available", instale o pacote do sistema e repita:
+
+```bash
+sudo apt install python3-venv
+```
+
+O `requirements.txt` fixa as versões das bibliotecas com as quais o dashboard e o notebook foram testados do início ao fim em uma instalação limpa. Versões mais novas costumam funcionar, mas não foram testadas.
 
 ## Execução
 
