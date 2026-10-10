@@ -984,42 +984,6 @@ def secao_resumo_categorias(dados, raio):
     )
 
 
-def secao_ajustada(dados, raio):
-    st.subheader("Comparando acidentes parecidos, o resultado continua?")
-    razoes = relacao.razoes_por_densidade(dados)
-    if razoes.empty:
-        st.info("Poucos acidentes para formar os grupos de densidade.")
-        return
-
-    referencia = razoes["referencia"].iloc[0]
-    st.caption(
-        f"Cada grupo de sinais em até {raio} m é comparado ao grupo com menos "
-        f"sinais ({referencia}). A razão compara a proporção de graves: 1 "
-        "quer dizer igual e abaixo de 1, menos graves. \"Sem controle\" compara "
-        "tudo junto; \"com controle\" compara só acidentes do mesmo tipo, da "
-        "mesma região, do mesmo período (dia ou noite) e do mesmo ano. Se os "
-        "dois ficam parecidos, esses fatores explicam pouco do padrão."
-    )
-    ultimo = razoes.iloc[-1]
-    colunas = st.columns(3)
-    colunas[0].metric(
-        f"Grupo {ultimo['grupo']} contra {referencia}: sem controle",
-        f"{ultimo['razao_bruta']:.2f}".replace(".", ","),
-        border=True,
-    )
-    colunas[1].metric(
-        "Com controle (ajustada)",
-        f"{ultimo['razao']:.2f}".replace(".", ","),
-        border=True,
-    )
-    colunas[2].metric(
-        "Margem de erro (95%)",
-        texto_intervalo(ultimo),
-        border=True,
-    )
-    mostrar_grafico(graficos.grafico_razao_por_densidade(razoes))
-
-
 @st.fragment
 def secao_pontos_criticos(dados, raio):
     st.subheader("Zonas mais críticas")
@@ -1323,14 +1287,12 @@ def abas_perguntas(dados, raio, anos):
         if aba3.open:
             cabecalho_pergunta(
                 3,
-                "Respondida por: a porcentagem de graves por quantidade de sinais, "
-                "a checagem por região e a comparação entre acidentes parecidos.",
+                "Respondida por: a porcentagem de graves por quantidade de sinais "
+                "e a checagem por região.",
             )
             secao_densidade(dados, raio)
             st.divider()
             secao_regiao(dados, raio)
-            st.divider()
-            secao_ajustada(dados, raio)
 
     with aba4:
         if aba4.open:

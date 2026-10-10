@@ -88,7 +88,7 @@ http://localhost:8501
 - **Sinalização × Acidentes:** cinco subabas, uma para cada pergunta do projeto, cada uma com o texto da pergunta e os gráficos que a respondem.
   - **Tipos e conjuntos** (pergunta 1): resumo por categoria de sinal, combinações de sinalização (com seletor de quantas mostrar), pares de sinal e ocorrência e antes e depois da implantação (categoria e janela de 6 a 24 meses).
   - **Zonas e distância** (pergunta 2): mapa dos acidentes graves (coloridos pela quantidade de sinais, com agrupamento de pontos próximos e legenda com caixas), ranking das zonas mais críticas (tamanho da área, ordenação, mínimo de graves, quantidade e download em CSV) e distância ao sinal mais próximo.
-  - **Densidade** (pergunta 3): porcentagem de graves por quantidade de sinais, por tipo de acidente e por região (com seletor de tipo), e comparação entre acidentes parecidos (razão ajustada).
+  - **Densidade** (pergunta 3): porcentagem de graves por quantidade de sinais, por tipo de acidente e por região (com seletor de tipo).
   - **Horário** (pergunta 4): mapa de calor por dia da semana e horário, com filtros de **tipo de acidente** e **só acidentes com vítimas** e realce das células com mais acidentes; como complemento, comparação entre dia e noite e entre marcações e placas.
   - **Vítimas** (pergunta 5): vítimas por papel e densidade, pares de vítima e sinal e a opção de considerar só acidentes com uma vítima.
 - **Análise de dados:** frequências por categoria e distribuições das variáveis numéricas, com escolha da base (acidentes, vítimas ou sinalização).

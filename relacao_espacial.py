@@ -554,29 +554,6 @@ def razoes_por_categoria(dados, categorias):
     return pd.DataFrame(linhas)
 
 
-def razoes_por_densidade(dados):
-    """Razão de graves de cada grupo de densidade contra o grupo com menos
-    sinais, bruta e controlando tipo de acidente, região, horário e ano."""
-    dados = dados.assign(grupo=grupos_densidade(dados["n_sinais"]))
-    grupos = list(dados["grupo"].cat.categories)
-    referencia = grupos[0]
-
-    linhas = []
-    for grupo in grupos[1:]:
-        parte = dados[dados["grupo"].isin([referencia, grupo])]
-        estratos = _estratos(parte, COLUNAS_CONTROLE)
-        linhas.append({
-            "grupo": grupo,
-            "referencia": referencia,
-            **razao_ajustada(
-                parte["acidente_grave"].to_numpy(),
-                parte["grupo"].eq(grupo).to_numpy(),
-                estratos,
-            ),
-        })
-    return pd.DataFrame(linhas)
-
-
 # ---------- pontos críticos ----------
 
 TAMANHOS_CELULA = [100, 200, 300]

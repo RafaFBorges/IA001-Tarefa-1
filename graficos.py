@@ -1216,7 +1216,6 @@ def grafico_marcacao_e_placa(dados):
 # ---------- razões ajustadas ----------
 
 COR_AJUSTADA = "#4c78a8"
-COR_BRUTA = "#9e9e9e"
 LIMITE_NOME_LEGENDA = 420  # px; bem acima do maior nome de série
 SERIE_ENTRE_LOCAIS = "Comparação entre locais (ajustada)"
 SERIE_ANTES_DEPOIS = "Antes e depois da implantação"
@@ -1296,54 +1295,6 @@ def grafico_razao_por_categoria(dados):
     return alt.layer(_referencia_em_um(escala), intervalos, pontos).properties(
         height=max(260, 46 * len(ordem))
     )
-
-
-def grafico_razao_por_densidade(dados):
-    """Razão de graves de cada grupo de densidade contra o de menos sinais,
-    sem controle (bruta) e com controle."""
-    linhas = []
-    for _, linha in dados.iterrows():
-        linhas.append({
-            "grupo": linha["grupo"], "serie": "Sem controle (bruta)",
-            "razao": linha["razao_bruta"], "inferior": np.nan, "superior": np.nan,
-        })
-        linhas.append({
-            "grupo": linha["grupo"],
-            "serie": "Controlando tipo, região, horário e ano",
-            "razao": linha["razao"], "inferior": linha["inferior"],
-            "superior": linha["superior"],
-        })
-    longo = pd.DataFrame(linhas)
-    series = ["Sem controle (bruta)", "Controlando tipo, região, horário e ano"]
-    ordem = list(dados["grupo"])
-
-    base = alt.Chart(longo).encode(
-        y=alt.Y("grupo:N", sort=ordem, title="Sinais em até o raio (grupo)"),
-        yOffset=alt.YOffset("serie:N", sort=series),
-        color=alt.Color(
-            "serie:N",
-            title=None,
-            sort=series,
-            scale=alt.Scale(domain=series, range=[COR_BRUTA, COR_AJUSTADA]),
-            legend=_legenda(orient="top"),
-        ),
-        tooltip=[
-            alt.Tooltip("grupo:N", title="Grupo"),
-            alt.Tooltip("serie:N", title="Análise"),
-            alt.Tooltip("razao:Q", title="Razão", format=".2f"),
-            alt.Tooltip("inferior:Q", title="IC 95% inferior", format=".2f"),
-            alt.Tooltip("superior:Q", title="IC 95% superior", format=".2f"),
-        ],
-    )
-    pontos = base.mark_point(filled=True, size=90).encode(
-        x=alt.X(
-            "razao:Q",
-            title="Razão de acidentes graves contra o grupo de menos sinais",
-            scale=alt.Scale(zero=False),
-        )
-    )
-    intervalos = base.mark_rule(strokeWidth=2).encode(x="inferior:Q", x2="superior:Q")
-    return alt.layer(_referencia_em_um(), intervalos, pontos).properties(height=260)
 
 
 # ---------- combinações de sinalização ----------
