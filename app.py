@@ -1119,8 +1119,12 @@ def secao_combinacoes(dados, raio):
     siglas = "; ".join(f"{sigla} = {nome}" for nome, sigla in relacao.SIGLAS.items())
     st.caption(
         "Cada acidente tem uma combinação: o conjunto de tipos de sinal que "
-        f"existem por perto (até {raio} m). Siglas: {siglas}. Segue o filtro "
-        "de ano."
+        f"existem por perto (até {raio} m). Cada barra do gráfico é a "
+        "porcentagem de acidentes graves daquela combinação, da menor para a "
+        "maior, com a quantidade de acidentes entre parênteses; a linha "
+        "tracejada é a média de todos os acidentes, e barras à esquerda dela "
+        f"têm menos graves que o normal. Siglas: {siglas}. Segue o filtro de "
+        "ano."
     )
 
     quantidade = st.select_slider(
@@ -1134,11 +1138,24 @@ def secao_combinacoes(dados, raio):
         st.info("Poucos acidentes para formar combinações.")
         return
 
-    st.markdown(
-        f"**As {len(tabela)} combinações mais comuns cobrem "
-        f"{cobertura:.0%} dos acidentes**; ao todo são {total} combinações com "
-        f"pelo menos {relacao.MINIMO_REGISTROS} acidentes. As barras seguem a "
-        "quantidade de acidentes; a cor e o número ao lado mostram a % de graves."
+    coluna_cobertura, coluna_combinacoes = st.columns(2)
+    coluna_cobertura.metric(
+        "Cobertura",
+        f"{cobertura:.0%}",
+        help=(
+            f"Parte dos acidentes que as {len(tabela)} combinações mostradas "
+            "cobrem."
+        ),
+        border=True,
+    )
+    coluna_combinacoes.metric(
+        "Combinações",
+        graficos.formatar_inteiro(total),
+        help=(
+            f"Combinações de sinais com pelo menos {relacao.MINIMO_REGISTROS} "
+            "acidentes."
+        ),
+        border=True,
     )
     mostrar_grafico(graficos.grafico_combinacoes(tabela))
 

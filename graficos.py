@@ -530,7 +530,7 @@ def _camada_referencia(serie):
                     domain=["Média", "Mediana"],
                     range=[COR_MEDIA, COR_MEDIANA],
                 ),
-                legend=alt.Legend(title=None, orient="top"),
+                legend=_legenda(orient="top"),
             ),
             strokeDash=alt.StrokeDash(
                 "medida:N",
@@ -881,7 +881,7 @@ def grafico_pareamento(dados, categoria, raio, unidade="acidentes"):
             domain=["Com sinal por perto", "Sem sinal por perto"],
             range=[COR_COM_SINAL, COR_SEM_SINAL],
         ),
-        legend=alt.Legend(orient="top"),
+        legend=_legenda(orient="top"),
     )
     base = alt.Chart(dados).encode(
         x=alt.X(
@@ -967,7 +967,7 @@ def _cor_periodo():
         title=None,
         sort=["Antes", "Depois"],
         scale=alt.Scale(domain=["Antes", "Depois"], range=[COR_ANTES, COR_DEPOIS]),
-        legend=alt.Legend(orient="top"),
+        legend=_legenda(orient="top"),
     )
 
 
@@ -1113,7 +1113,7 @@ def _cor_dia_noite():
         title=None,
         sort=["Dia", "Noite"],
         scale=alt.Scale(domain=["Dia", "Noite"], range=[COR_DIA, COR_NOITE]),
-        legend=alt.Legend(orient="top"),
+        legend=_legenda(orient="top"),
     )
 
 
@@ -1217,8 +1217,15 @@ def grafico_marcacao_e_placa(dados):
 
 COR_AJUSTADA = "#4c78a8"
 COR_BRUTA = "#9e9e9e"
+LIMITE_NOME_LEGENDA = 420  # px; bem acima do maior nome de série
 SERIE_ENTRE_LOCAIS = "Comparação entre locais (ajustada)"
 SERIE_ANTES_DEPOIS = "Antes e depois da implantação"
+
+
+def _legenda(**opcoes):
+    """Legenda de séries com o nome inteiro: o limite padrão do Vega (160 px)
+    cortava nomes como "Antes e depois da implantação" com "…"."""
+    return alt.Legend(title=None, labelLimit=LIMITE_NOME_LEGENDA, **opcoes)
 
 
 def _referencia_em_um(escala=None):
@@ -1262,7 +1269,7 @@ def grafico_razao_por_categoria(dados):
                 domain=[SERIE_ENTRE_LOCAIS, SERIE_ANTES_DEPOIS],
                 range=[COR_AJUSTADA, COR_EFEITO],
             ),
-            legend=alt.Legend(orient="top"),
+            legend=_legenda(orient="top"),
         ),
         tooltip=[
             alt.Tooltip("categoria:N", title="Categoria"),
@@ -1318,7 +1325,7 @@ def grafico_razao_por_densidade(dados):
             title=None,
             sort=series,
             scale=alt.Scale(domain=series, range=[COR_BRUTA, COR_AJUSTADA]),
-            legend=alt.Legend(orient="top"),
+            legend=_legenda(orient="top"),
         ),
         tooltip=[
             alt.Tooltip("grupo:N", title="Grupo"),
@@ -1341,6 +1348,18 @@ def grafico_razao_por_densidade(dados):
 
 # ---------- combinações de sinalização ----------
 
+def _rotulo_combinacao(presentes, siglas):
+    """Nome curto de uma combinação: lista as siglas quando há poucas e diz
+    "Todas menos ..." quando quase todas as categorias estão presentes."""
+    if not presentes.any():
+        return "Nenhuma"
+    if presentes.all():
+        return f"Todas as {len(presentes)}"
+    if presentes.sum() >= len(presentes) - 3:
+        return "Todas menos " + ", ".join(siglas[~presentes])
+    return " + ".join(siglas[presentes])
+
+
 def dados_combinacoes(df, quantidade):
     """As combinações de categorias de sinal mais frequentes, com a
     proporção de graves de cada uma. Devolve a tabela, a parte dos acidentes
@@ -1352,39 +1371,62 @@ def dados_combinacoes(df, quantidade):
     tabela = relacao.proporcao_graves(df, "combinacao")
     nomes = df.drop_duplicates("combinacao").set_index("combinacao")["categorias"]
     tabela["categorias"] = tabela["combinacao"].map(nomes)
-    tabela["rotulo_pct"] = tabela["pct"].map(lambda v: formatar_percentual(v))
+
+    colunas = [c for c in df.columns if c.startswith(relacao.PREFIXO_PERTO)]
+    siglas = np.array(
+        [relacao.SIGLAS.get(c[len(relacao.PREFIXO_PERTO):], c) for c in colunas]
+    )
+    presentes = df.drop_duplicates("combinacao").set_index("combinacao")[colunas]
+    legivel = {
+        combinacao: _rotulo_combinacao(linha.to_numpy(dtype=bool), siglas)
+        for combinacao, linha in presentes.iterrows()
+    }
+    tabela["rotulo"] = tabela["combinacao"].map(legivel)
+    tabela["rotulo_barra"] = [
+        f"{formatar_percentual(p)} ({formatar_inteiro(n)} acidentes)"
+        for p, n in zip(tabela["pct"], tabela["n"])
+    ]
+    tabela["media_geral"] = df["acidente_grave"].mean() * 100
 
     cobertura = tabela.nlargest(quantidade, "n")["n"].sum() / len(df)
     return tabela.nlargest(quantidade, "n").reset_index(drop=True), cobertura, len(tabela)
 
 
 def grafico_combinacoes(tabela):
+    """Porcentagem de graves de cada combinação, da menor para a maior, com
+    uma linha na média de todos os acidentes: barras à esquerda dela têm menos
+    graves que o normal. A quantidade de acidentes vai escrita na barra."""
+    media = float(tabela["media_geral"].iloc[0])
     base = alt.Chart(tabela).encode(
         y=alt.Y(
-            "combinacao:N",
-            sort=alt.EncodingSortField("n", order="descending"),
+            "rotulo:N",
+            sort=alt.EncodingSortField("pct", order="ascending"),
             title=None,
-            axis=alt.Axis(labelLimit=420),
+            axis=alt.Axis(labelLimit=420, labelOverlap=False),
         ),
         tooltip=[
-            alt.Tooltip("categorias:N", title="Categorias presentes"),
+            alt.Tooltip("categorias:N", title="Tipos de sinal presentes"),
             *_tooltip_metricas(),
         ],
     )
-    barras = base.mark_bar().encode(
-        x=alt.X("n:Q", title="Acidentes"),
-        color=alt.Color(
-            "pct:Q",
-            title="Graves (%)",
-            scale=alt.Scale(scheme="orangered", domainMin=0),
-            legend=alt.Legend(orient="top", format=".1f"),
-        ),
+    barras = base.mark_bar(color=COR_NEUTRA).encode(
+        x=alt.X("pct:Q", title="Acidentes graves (%)")
     )
     rotulos = base.mark_text(align="left", dx=4, color=COR_VALOR).encode(
-        x="n:Q", text="rotulo_pct:N"
+        x="pct:Q", text="rotulo_barra:N"
     )
-    return alt.layer(barras, rotulos).properties(
-        height=max(200, 26 * len(tabela))
+    referencia = (
+        alt.Chart(pd.DataFrame({"x": [media]}))
+        .mark_rule(strokeDash=[4, 4], color=COR_MEDIA)
+        .encode(x="x:Q")
+    )
+    texto_media = (
+        alt.Chart(pd.DataFrame({"x": [media], "texto": [f"Média de todos os acidentes: {formatar_percentual(media)}"]}))
+        .mark_text(align="left", baseline="bottom", dx=4, dy=-4, color=COR_MEDIA, y=0)
+        .encode(x="x:Q", text="texto:N")
+    )
+    return alt.layer(barras, rotulos, referencia, texto_media).properties(
+        height=max(200, 32 * len(tabela))
     )
 
 
