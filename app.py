@@ -678,14 +678,6 @@ def secao_horario(dados, raio):
         st.info("Nenhum acidente com horário informado para os filtros selecionados.")
         return
 
-    st.caption(
-        "As marcações no chão dependem de boa visibilidade à noite; as placas "
-        "refletem a luz. O cadastro não diz se o sinal é marcação ou placa, "
-        "então usei o local de instalação: no leito da rua é marcação (faixas, "
-        "divisão de pista, setas pintadas, tachões); na calçada, no canteiro "
-        "ou acima da rua é placa ou equipamento (abrigos, gradis)."
-    )
-
     noite = dados["periodo"].eq("NOITE")
     colunas = st.columns(3)
     colunas[0].metric(
@@ -704,30 +696,17 @@ def secao_horario(dados, raio):
         border=True,
     )
 
-    st.subheader("Mais sinais por perto reduzem os acidentes graves, de dia e de noite?")
+    st.subheader("Os sinais têm o mesmo efeito de dia e de noite?")
     st.caption(
         "Cada barra mostra a porcentagem de acidentes graves, do grupo com "
-        "poucos sinais por perto ao grupo com muitos, de dia e de noite, para "
-        "cada tipo de sinal. Se as marcações importassem mais à noite, as "
-        "barras da noite cairiam mais. A linha em cada barra é a margem de "
-        f"erro (95%). Grupos com menos de {relacao.MINIMO_REGISTROS} acidentes "
-        "ficam de fora."
-    )
-    st.altair_chart(
-        graficos.grafico_graves_horario(
-            graficos.dados_graves_horario(dados), raio
-        ),
-        width="content",
-    )
-
-    st.subheader("Marcações e placas separadas")
-    st.caption(
-        "Marcações e placas costumam aparecer juntas, o que dificulta separar "
-        "o efeito de cada uma. Por isso cada tipo é dividido na mediana (muitos "
-        "ou poucos sinais) e comparamos as quatro combinações, de dia e de noite."
+        "poucos sinais por perto ao grupo com muitos (sinais de todos os "
+        "tipos), de dia e de noite. Se o efeito fosse o mesmo, as barras dos "
+        "dois períodos cairiam na mesma proporção. A linha em cada barra é a "
+        f"margem de erro (95%). Grupos com menos de {relacao.MINIMO_REGISTROS} "
+        "acidentes ficam de fora."
     )
     mostrar_grafico(
-        graficos.grafico_marcacao_e_placa(graficos.dados_marcacao_e_placa(dados))
+        graficos.grafico_graves_horario(graficos.dados_graves_horario(dados), raio)
     )
 
 

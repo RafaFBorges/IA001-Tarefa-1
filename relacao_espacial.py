@@ -59,14 +59,6 @@ ROTULO_PAPEL_NAO_INFORMADO = "Não informado"
 
 REGIOES = ["CENTRO", "LESTE", "NORTE", "SUL"]
 
-# O cadastro não diz se o sinal é horizontal ou vertical, mas o local de
-# instalação separa bem: marcações no pavimento ficam no leito da via; placas,
-# abrigos e gradis ficam na calçada, no canteiro ou sobre a rua.
-LOCAIS_HORIZONTAIS = ["LEITO DA VIA"]
-LOCAIS_VERTICAIS = ["CALCADA", "CANTEIRO CENTRAL", "SOBRE A RUA (AÉREA)"]
-ROTULO_HORIZONTAL = "Marcações no leito da via (horizontais)"
-ROTULO_VERTICAL = "Placas e equipamentos na calçada ou canteiro (verticais)"
-
 FAIXAS_DISTANCIA = [0, 5, 10, 25, 50, 100, 200, 500, np.inf]
 ROTULOS_DISTANCIA = [
     "< 5", "5–10", "10–25", "25–50", "50–100", "100–200", "200–500", "> 500",
@@ -103,11 +95,6 @@ def calcular_relacao(acidentes, sinalizacao, raio):
     ano_sinais = sinais["implantacao"].dt.year.fillna(0).to_numpy()
     categorias_sinais = sinais["categoria"].to_numpy()
     categorias = sorted(set(categorias_sinais))
-    local_sinais = sinais["local_de_instal"].to_numpy()
-    do_tipo = {
-        "n_horizontal": np.isin(local_sinais, LOCAIS_HORIZONTAIS),
-        "n_vertical": np.isin(local_sinais, LOCAIS_VERTICAIS),
-    }
 
     pontos_acidentes = projetar(acidentes)
     ano_acidentes = acidentes["ano"].to_numpy()
@@ -116,7 +103,6 @@ def calcular_relacao(acidentes, sinalizacao, raio):
     distancia = np.full(total, np.nan)
     quantidade = np.zeros(total, dtype=int)
     perto = {c: np.zeros(total, dtype=bool) for c in categorias}
-    por_tipo = {nome: np.zeros(total, dtype=int) for nome in do_tipo}
 
     for ano in np.unique(ano_acidentes):
         do_ano = ano_acidentes == ano
@@ -128,11 +114,6 @@ def calcular_relacao(acidentes, sinalizacao, raio):
             distancia[do_ano] = arvore.query(pontos)[0]
             quantidade[do_ano] = _contar(arvore, pontos, raio)
 
-        for nome, do_local in do_tipo.items():
-            membros = vigentes & do_local
-            arvore = cKDTree(pontos_sinais[membros]) if membros.any() else None
-            por_tipo[nome][do_ano] = _contar(arvore, pontos, raio)
-
         for categoria in categorias:
             membros = vigentes & (categorias_sinais == categoria)
             arvore = cKDTree(pontos_sinais[membros]) if membros.any() else None
@@ -142,7 +123,6 @@ def calcular_relacao(acidentes, sinalizacao, raio):
         {
             "dist_sinal": distancia,
             "n_sinais": quantidade,
-            **por_tipo,
             **{PREFIXO_PERTO + c: v for c, v in perto.items()},
         },
         index=acidentes.index,
