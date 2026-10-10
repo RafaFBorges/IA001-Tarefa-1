@@ -820,7 +820,7 @@ def secao_vitimas(dados, raio):
         border=True,
     )
 
-    st.subheader("Condutor, ocupante ou pedestre: quem se dá pior com poucos sinais?")
+    st.subheader("Entre condutor, ocupante e pedestre, quem corre mais risco com baixa sinalização?")
     st.caption(
         "Cada barra mostra a porcentagem de vítimas que estavam em acidentes "
         "graves, do grupo com poucos sinais por perto ao grupo com muitos. "
@@ -849,7 +849,7 @@ def secao_vitimas(dados, raio):
         relacao.PARES_VITIMAS,
         "vítimas",
         "par_vitimas",
-        "Pedestres e ciclistas: ter o sinal certo por perto ajuda?",
+        "Ter o sinal certo por perto ajuda pedestres e ciclistas?",
     )
 
 
@@ -1132,7 +1132,7 @@ PERGUNTAS = {
     2: "Onde ficam as zonas de acidentes graves e a que distância está o sinal mais próximo de cada uma?",
     3: "A quantidade de sinais por perto reduz a severidade dos acidentes?",
     4: "Em quais dias e horários acontecem mais acidentes com vítimas?",
-    5: "Onde há menos sinais por perto, as vítimas são mais graves? Muda se a pessoa for motorista, passageiro ou pedestre?",
+    5: "As vítimas são mais graves onde há menos sinais? Depende do tipo de vítima?",
 }
 
 # Widgets das subabas. Uma subaba fechada não desenha seus widgets, e o
