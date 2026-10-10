@@ -109,9 +109,9 @@ def calcular_antes_depois(_acidentes, _sinalizacao, categoria, raio, meses):
     return relacao.antes_depois(_acidentes, _sinalizacao, categoria, raio, meses)
 
 
-@st.cache_resource(max_entries=5)
-def montar_mapa_graves(_graves, _grupos, raio, anos):
-    return mapas.mapa_graves_sinalizacao(_graves, _grupos, raio)
+@st.cache_data(max_entries=5)
+def dados_mapa_graves(_graves, _grupos, raio, anos):
+    return mapas.dados_mapa_graves(_graves, _grupos, raio)
 
 
 @st.cache_resource
@@ -1239,14 +1239,16 @@ def secao_mapa_graves(dados, raio, anos):
     st.caption(
         "Cada ponto é um acidente grave. A cor mostra quantos sinais há por "
         f"perto (até {raio} m). Passe o mouse sobre um ponto para ver os "
-        "detalhes."
+        "detalhes; pontos próximos são agrupados, e o zoom os separa."
     )
     st_folium(
-        montar_mapa_graves(
-            graves,
-            relacao.grupos_densidade(dados["n_sinais"]),
-            raio,
-            tuple(sorted(anos)),
+        mapas.mapa_graves_sinalizacao(
+            dados_mapa_graves(
+                graves,
+                relacao.grupos_densidade(dados["n_sinais"]),
+                raio,
+                tuple(sorted(anos)),
+            ),
         ),
         width=None,
         height=550,

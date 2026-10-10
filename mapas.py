@@ -65,6 +65,8 @@ SCRIPT_AGRUPADA = """
     var destaque = -1;   // tipo sob o mouse no painel: é desenhado por cima de todos
     var cache = {};
     var ativo = {{ "true" if this.ativo else "false" }};
+    // ordem em que os tipos são desenhados (o último fica por cima)
+    var ordemCat = D.ordem_desenho || D.cats.map(function (_, c) { return c; });
 
     // ---------- formatos ----------
     var CRUZ = [[-0.38,-1],[0.38,-1],[0.38,-0.38],[1,-0.38],[1,0.38],[0.38,0.38],
@@ -214,7 +216,7 @@ SCRIPT_AGRUPADA = """
         //    muitos itens, um único traçado por tipo, que é bem mais rápido.
         hx = []; hy = []; hr = []; hk = [];
         var ordem = [];
-        for (var c1 = 0; c1 < NC; c1++) { ordem = ordem.concat(porTipo[c1]); }
+        for (var c1 = 0; c1 < NC; c1++) { ordem = ordem.concat(porTipo[ordemCat[c1]]); }
         if (agrupar) {
             ordem.sort(function (a, b) { return fonte.n[b] - fonte.n[a]; });
         }
@@ -226,7 +228,7 @@ SCRIPT_AGRUPADA = """
             ordem = normais.concat(realcados);
         }
         var ordemTipos = [];
-        for (var ot = 0; ot < NC; ot++) { if (ot !== destaque) { ordemTipos.push(ot); } }
+        for (var ot = 0; ot < NC; ot++) { if (ordemCat[ot] !== destaque) { ordemTipos.push(ordemCat[ot]); } }
         if (destaque >= 0) { ordemTipos.push(destaque); }
         ctx.lineWidth = 1;
         ctx.strokeStyle = "rgba(255,255,255,0.9)";
@@ -331,6 +333,11 @@ SCRIPT_AGRUPADA = """
                            className: "dica-sinais" });
     var itemAtual = null;
     function descricaoDe(i) {
+        if (D.modo === "graves") {
+            return "<b>" + D.descr[D.d[i]] + "</b><br>" + D.datas[D.dt[i]] + " · " +
+                D.ruas[D.rr[i]] + "<br>" + D.ns[i] +
+                " sinais em até " + D.raio + " m<br>Sinal mais próximo: " + D.ds[i] + " m";
+        }
         if (D.modo === "acidentes") {
             return "<b>" + D.descr[D.d[i]] + "</b><br>" + D.datas[D.dt[i]] + " às " +
                 D.horas[D.hh[i]] + "<br>" + D.ruas[D.rr[i]] + "<br>Feridos: " + D.fe[i] +
@@ -759,59 +766,58 @@ def mapa_vistas(acidentes, sinalizacao):
 CORES_DENSIDADE = ["#fde725", "#5ec962", "#21918c", "#3b528b", "#440154"]
 
 
-def mapa_graves_sinalizacao(graves, grupos, raio):
-    """Acidentes graves coloridos pelo grupo de densidade de sinais no raio.
+def dados_mapa_graves(graves, grupos, raio):
+    """Dados da camada dos acidentes graves, coloridos pelo grupo de densidade
+    de sinais. Usa a mesma camada do mapa de acidentes, trocando os tipos pelos
+    grupos.
 
     `graves` traz as colunas da relação espacial (dist_sinal, n_sinais) e
-    `grupos` é o rótulo do grupo de cada acidente, na mesma ordem.
-    """
-    mapa = _base_mapa()
+    `grupos` é o rótulo do grupo de cada acidente, na mesma ordem."""
     pontos = pontos_em_porto_alegre(graves)
     grupos = grupos.loc[pontos.index]
     ordem = list(grupos.cat.categories)
     cores = dict(zip(ordem, CORES_DENSIDADE[-len(ordem):]))
+    contagens = grupos.value_counts()
 
-    camada = folium.FeatureGroup(name="Acidentes graves").add_to(mapa)
-    # Os grupos com menos sinais ficam por cima: são os que mais interessam.
-    for grupo in reversed(ordem):
-        do_grupo = pontos[grupos == grupo]
-        registros = zip(
-            do_grupo["latitude"],
-            do_grupo["longitude"],
-            do_grupo["data"].dt.strftime("%d/%m/%Y").fillna("sem data"),
-            do_grupo["log1"].astype("string").fillna("Local não informado"),
-            do_grupo["tipo_acid"].astype("string").fillna("Tipo não informado"),
-            do_grupo["n_sinais"],
-            do_grupo["dist_sinal"],
-        )
-        for latitude, longitude, data, rua, tipo, quantidade, distancia in registros:
-            folium.CircleMarker(
-                location=[latitude, longitude],
-                radius=4,
-                color="#222222",
-                weight=0.6,
-                fill=True,
-                fill_color=cores[grupo],
-                fill_opacity=0.85,
-                tooltip=(
-                    f"<b>{html.escape(tipo)}</b><br>{data} · {html.escape(rua)}<br>"
-                    f"{int(quantidade)} sinais em até {raio} m<br>"
-                    f"Sinal mais próximo: {distancia:.0f} m"
-                ),
-            ).add_to(camada)
+    dados = _dados_acidentes(pontos)
+    dados.update({
+        "id": "graves",
+        "modo": "graves",
+        "titulo": f"Sinais em até {raio} m",
+        "unidade": "acidentes graves",
+        "rotulo_agrupar": "Agrupar acidentes próximos",
+        "raio": raio,
+        "cat": grupos.cat.codes.astype(int).tolist(),
+        "ns": pontos["n_sinais"].astype(int).tolist(),
+        "ds": pontos["dist_sinal"].round(0).astype(int).tolist(),
+        "cats": [
+            {
+                # "3–4 sinais": o nome aparece sozinho na dica de um grupo de pontos
+                "nome": html.escape(f"{g} sinal" if g == "1" else f"{g} sinais"),
+                "cor": cores[g],
+                "forma": "circulo",
+                "n": int(contagens.get(g, 0)),
+                "escala": 1.2,
+                "alfa": 0.85,
+            }
+            for g in ordem
+        ],
+        # Os grupos com menos sinais ficam por cima: são os que mais interessam.
+        "ordem_desenho": list(range(len(ordem) - 1, -1, -1)),
+    })
+    return dados
 
-    itens = "".join(
-        f'<div><span style="display:inline-block;width:12px;height:12px;'
-        f'border-radius:50%;background:{cores[g]};border:1px solid #222;'
-        f'margin-right:6px;vertical-align:middle"></span>{html.escape(g)}</div>'
-        for g in ordem
-    )
-    mapa.get_root().html.add_child(folium.Element(
-        '<div style="position:fixed;bottom:24px;left:12px;z-index:9999;'
-        "background:rgba(255,255,255,0.92);color:#262730;padding:8px 10px;"
-        'border-radius:6px;font:12px sans-serif;box-shadow:0 1px 6px rgba(0,0,0,.4)">'
-        f"<b>Sinais em até {raio} m</b>{itens}</div>"
-    ))
+
+def mapa_graves_sinalizacao(dados_graves):
+    """Acidentes graves coloridos pelo grupo de densidade de sinais no raio,
+    com agrupamento de pontos próximos e legenda com caixas (de
+    `dados_mapa_graves`).
+
+    Recebe os dados já prontos, que o app guarda em cache. O mapa em si é
+    refeito a cada vez: o st_folium altera o objeto ao desenhá-lo, e um mapa
+    reaproveitado deixava de funcionar na segunda exibição."""
+    mapa = _base_mapa()
+    CamadaAgrupada(dados_graves, ativo=True).add_to(mapa)
     return mapa
 
 
