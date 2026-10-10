@@ -195,16 +195,15 @@ with st.sidebar.container(key="botoes_anos"):
         "Desmarcar tudo", on_click=marcar_anos, args=(False,), width="stretch"
     )
 
-raio_sinalizacao = st.sidebar.slider(
+RAIOS_SINALIZACAO = [1, 3, 5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100]
+
+raio_sinalizacao = st.sidebar.select_slider(
     "Raio da sinalização (m)",
-    min_value=0,
-    max_value=300,
+    options=RAIOS_SINALIZACAO,
     value=15,
-    step=1,
     help=(
         "Distância em volta de cada acidente usada para contar os sinais "
-        "próximos. Vale só para a aba Sinalização × Acidentes. Com 0, só "
-        "contam os sinais no mesmo ponto do acidente."
+        "próximos. Vale só para a aba Sinalização × Acidentes."
     ),
 )
 
@@ -734,7 +733,7 @@ def secao_horario(dados, raio):
 
 @st.fragment
 def secao_antes_depois(raio):
-    st.subheader("Os acidentes mudam depois que o sinal é instalado?")
+    st.subheader("Um sinal novo surte efeito?")
     st.caption(
         "Para cada sinal instalado, compara os acidentes num raio de "
         f"{raio} m nos meses antes e depois da instalação. Entram só locais "
@@ -1120,9 +1119,10 @@ def secao_combinacoes(dados, raio):
     st.caption(
         "Cada acidente tem uma combinação: o conjunto de tipos de sinal que "
         f"existem por perto (até {raio} m). Cada barra do gráfico é a "
-        "porcentagem de acidentes graves daquela combinação, da menor para a "
-        "maior, com a quantidade de acidentes entre parênteses; a linha "
-        "tracejada é a média de todos os acidentes, e barras à esquerda dela "
+        "porcentagem de acidentes graves daquela combinação. As linhas estão "
+        "em ordem de quantidade de acidentes (o número ao lado do nome), das "
+        "mais comuns para as menos. A linha tracejada é a média de todos os "
+        "acidentes, e barras à esquerda dela "
         f"têm menos graves que o normal. Siglas: {siglas}. Segue o filtro de "
         "ano."
     )
@@ -1159,7 +1159,7 @@ def secao_combinacoes(dados, raio):
     )
     mostrar_grafico(graficos.grafico_combinacoes(tabela))
 
-    st.subheader("Mais tipos diferentes de sinal por perto, menos graves?")
+    st.subheader("Variedade de sinalização diminui a severidade?")
     st.caption(
         "Cada barra é a porcentagem de acidentes graves conforme quantos tipos "
         "diferentes de sinal existem por perto (de 0 a 9). A linha em cada "

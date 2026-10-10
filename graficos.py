@@ -1382,10 +1382,13 @@ def dados_combinacoes(df, quantidade):
         for combinacao, linha in presentes.iterrows()
     }
     tabela["rotulo"] = tabela["combinacao"].map(legivel)
-    tabela["rotulo_barra"] = [
-        f"{formatar_percentual(p)} ({formatar_inteiro(n)} acidentes)"
-        for p, n in zip(tabela["pct"], tabela["n"])
+    # A quantidade vai no nome da linha: é por ela que as barras estão em
+    # ordem, e o comprimento da barra mostra outra medida (a % de graves).
+    tabela["rotulo_eixo"] = [
+        f"{r} · {formatar_inteiro(n)}"
+        for r, n in zip(tabela["rotulo"], tabela["n"])
     ]
+    tabela["rotulo_barra"] = tabela["pct"].map(formatar_percentual)
     tabela["media_geral"] = df["acidente_grave"].mean() * 100
 
     cobertura = tabela.nlargest(quantidade, "n")["n"].sum() / len(df)
@@ -1393,15 +1396,15 @@ def dados_combinacoes(df, quantidade):
 
 
 def grafico_combinacoes(tabela):
-    """Porcentagem de graves de cada combinação, da menor para a maior, com
+    """Porcentagem de graves de cada combinação, com as mais comuns no topo e
     uma linha na média de todos os acidentes: barras à esquerda dela têm menos
     graves que o normal. A quantidade de acidentes vai escrita na barra."""
     media = float(tabela["media_geral"].iloc[0])
     base = alt.Chart(tabela).encode(
         y=alt.Y(
-            "rotulo:N",
-            sort=alt.EncodingSortField("pct", order="ascending"),
-            title=None,
+            "rotulo_eixo:N",
+            sort=alt.EncodingSortField("n", order="descending"),
+            title="Combinação · acidentes",
             axis=alt.Axis(labelLimit=420, labelOverlap=False),
         ),
         tooltip=[
