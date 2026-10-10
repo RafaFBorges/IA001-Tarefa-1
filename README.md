@@ -83,13 +83,13 @@ http://localhost:8501
 
 **Abas:**
 
-- **Visão geral:** indicadores, acidentes por ano, vítimas fatais por ano, acidentes por tipo, mês e dias úteis × fim de semana. O mapa de calor por dia da semana e horário tem filtros próprios de **tipo de acidente** e **somente acidentes com vítimas**, além do piso da escala de cores.
+- **Visão geral:** indicadores, acidentes por ano, vítimas fatais por ano, acidentes por tipo, mês e dias úteis × fim de semana.
 - **Mapas:** painel "Visualização" no mapa para alternar entre os pontos dos acidentes, o mapa de calor e a sinalização (agrupada por categoria e por zoom), e botão para centralizar o mapa.
 - **Sinalização × Acidentes:** cinco subabas, uma para cada pergunta do projeto, cada uma com o texto da pergunta e os gráficos que a respondem.
   - **Tipos e conjuntos** (pergunta 1): resumo por categoria de sinal, combinações de sinalização (com seletor de quantas mostrar), pares de sinal e ocorrência e antes e depois da implantação (categoria e janela de 6 a 24 meses).
-  - **Zonas e distância** (pergunta 2): mapa dos acidentes graves, ranking de pontos críticos (tamanho da área, ordenação, mínimo de graves, quantidade e download em CSV) e distância ao sinal mais próximo.
-  - **Densidade** (pergunta 3): densidade de sinais por tipo de acidente e por região (com seletor de tipo) e razão ajustada.
-  - **Horário** (pergunta 4): comparação entre dia e noite e as marcações e placas (o mapa de calor por dia e horário fica na aba Visão geral).
+  - **Zonas e distância** (pergunta 2): mapa dos acidentes graves, ranking das zonas mais críticas (tamanho da área, ordenação, mínimo de graves, quantidade e download em CSV) e distância ao sinal mais próximo.
+  - **Densidade** (pergunta 3): porcentagem de graves por quantidade de sinais, por tipo de acidente e por região (com seletor de tipo), e comparação entre acidentes parecidos (razão ajustada).
+  - **Horário** (pergunta 4): mapa de calor por dia da semana e horário, com filtros de **tipo de acidente** e **só acidentes com vítimas** e realce das células com mais acidentes; como complemento, comparação entre dia e noite e entre marcações e placas.
   - **Vítimas** (pergunta 5): vítimas por papel e densidade, pares de vítima e sinal e a opção de considerar só acidentes com uma vítima.
 - **Análise de dados:** frequências por categoria e distribuições das variáveis numéricas, com escolha da base (acidentes, vítimas ou sinalização).
 - **Dados:** tabelas de acidentes, sinalização e vítimas, em duas visões: **Filtrado** (base tratada, com os filtros da barra lateral) e **Completo** (CSV original, sem tratamento).

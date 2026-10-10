@@ -337,7 +337,11 @@ def mostrar_frequencia(dados, coluna, chave, titulo=None, titulo_grande=False):
 
 @st.fragment
 def mostrar_heatmap_dia_hora(dados):
-    st.subheader("Distribuição de acidentes por dia da semana e horário")
+    st.subheader("Dias e horários com mais acidentes")
+    st.caption(
+        "Quanto mais escura a célula, mais acidentes naquele dia da semana e "
+        "horário."
+    )
 
     # Filtros do heatmap: valem só para este gráfico e reexecutam só este bloco.
     coluna_tipo, coluna_vitimas = st.columns([3, 2], vertical_alignment="bottom")
@@ -348,9 +352,9 @@ def mostrar_heatmap_dia_hora(dados):
         key="heatmap_tipo",
     )
     so_com_vitimas = coluna_vitimas.checkbox(
-        "Somente acidentes com vítimas",
+        "Só acidentes com vítimas",
         key="heatmap_vitimas",
-        help="Acidentes com ao menos um ferido ou morto.",
+        help="Acidentes com pelo menos um ferido ou morto.",
     )
     if tipo_heatmap != graficos.ROTULO_TODOS_TIPOS:
         dados = dados[dados["tipo_acid"].eq(tipo_heatmap)]
@@ -367,24 +371,24 @@ def mostrar_heatmap_dia_hora(dados):
     piso_heatmap = 0
     if maximo_heatmap > 1:
         piso_heatmap = st.slider(
-            "Piso da escala de cores (acidentes)",
+            "Realçar só as células com mais acidentes que:",
             min_value=0,
             max_value=maximo_heatmap - 1,
             value=0,
             help=(
-                "Células com acidentes até este valor ficam com a cor "
-                "mais clara. O tooltip continua mostrando a contagem real."
+                "Células com esse número de acidentes ou menos ficam na cor "
+                "mais clara, para destacar os horários de pico. Ao passar o "
+                "mouse, o número real continua aparecendo."
             ),
         )
         if piso_heatmap:
             st.caption(
-                f"Cores a partir de {piso_heatmap} acidentes: células "
-                "abaixo disso aparecem na cor mais clara."
+                f"Células com até {piso_heatmap} acidentes aparecem na cor "
+                "mais clara."
             )
         else:
             st.caption(
-                "Escala completa: as cores cobrem de 0 ao máximo de "
-                "acidentes."
+                "As cores vão de 0 até o maior número de acidentes."
             )
 
     mostrar_grafico(
@@ -551,8 +555,6 @@ with aba_visao:
         )
 
     if not filtrado.empty:
-        mostrar_heatmap_dia_hora(filtrado)
-
         esquerda, direita = st.columns(2)
 
         with esquerda:
@@ -565,14 +567,14 @@ with aba_visao:
 
 @st.fragment
 def secao_regiao(dados, raio):
-    st.subheader("A região explica o padrão?")
+    st.subheader("É só efeito da região?")
     st.caption(
-        "Cada região tem um nível diferente de sinalização e de gravidade, e "
-        "isso pode criar uma associação aparente. Aqui a densidade é separada "
-        "por região, com os mesmos grupos de densidade em todas elas. Barras "
-        "de erro: intervalo de confiança de 95%. Grupos com menos de "
-        f"{relacao.MINIMO_REGISTROS} acidentes são omitidos, o que acontece "
-        "quando uma região quase não tem locais com aquela densidade."
+        "Cada região tem um nível diferente de sinalização e de gravidade, o "
+        "que pode criar uma associação falsa. Aqui a comparação é feita dentro "
+        "de cada região, com os mesmos grupos de sinais. A linha em cada barra "
+        f"é a margem de erro (95%). Grupos com menos de {relacao.MINIMO_REGISTROS} "
+        "acidentes ficam de fora, o que acontece quando a região quase não "
+        "tem locais com aquela quantidade de sinais."
     )
 
     tipos = [graficos.ROTULO_TODOS_TIPOS] + [
@@ -582,7 +584,7 @@ def secao_regiao(dados, raio):
         "Tipo de acidente",
         tipos,
         key="regiao_tipo",
-        help="Atropelamentos são muito mais graves; fixar o tipo separa esse efeito.",
+        help="Atropelamentos são bem mais graves; escolher o tipo separa esse efeito.",
     )
     if tipo != graficos.ROTULO_TODOS_TIPOS:
         dados = dados[dados["tipo_acid"].eq(tipo.upper())]
@@ -638,12 +640,12 @@ def bloco_pareamento(dados, raio, pares, unidade, chave, titulo):
         dados, par["selecao"](dados), categoria
     )
     st.caption(
-        f"Compara {par['ocorrencia']} com e sem sinais de \"{categoria}\" em "
-        f"até {raio} m. Cada grupo de densidade reúne locais com quantidade "
-        "parecida de sinais de qualquer tipo, para não confundir o efeito do "
-        "sinal específico com o de haver muita sinalização. Barras de erro: "
-        f"intervalo de confiança de 95%. Grupos com menos de "
-        f"{relacao.MINIMO_REGISTROS} {unidade} são omitidos."
+        f"Compara {par['ocorrencia']} com e sem sinais de \"{categoria}\" por "
+        f"perto (até {raio} m). Os locais são agrupados pela quantidade total "
+        "de sinais, para a comparação ser justa: assim vemos o efeito do sinal "
+        "específico, e não o de haver muita sinalização em geral. A linha em "
+        "cada barra é a margem de erro (95%). Grupos com menos de "
+        f"{relacao.MINIMO_REGISTROS} {unidade} ficam de fora."
     )
 
     if dados_par.empty:
@@ -662,13 +664,13 @@ def secao_pareamento(dados, raio):
         relacao.PARES,
         "acidentes",
         "par_acidentes",
-        "O sinal certo perto do acidente muda a gravidade?",
+        "Ter o sinal certo por perto ajuda?",
     )
 
 
 @st.fragment
 def secao_horario(dados, raio):
-    st.subheader("Horário e sinalização horizontal")
+    st.subheader("Complemento: dia, noite e sinalização")
     dados = dados.assign(
         periodo=dados["noite_dia"].astype("string").str.strip().str.upper()
     )
@@ -678,12 +680,11 @@ def secao_horario(dados, raio):
         return
 
     st.caption(
-        "As marcações no pavimento dependem da visibilidade à noite; as placas "
-        "são refletivas. O cadastro não diz se o sinal é horizontal ou "
-        "vertical, então usei o local de instalação: sinais no leito da via "
-        "são marcações (faixas, divisão de pista, setas pintadas, tachões); "
-        "sinais na calçada, no canteiro ou sobre a rua são placas e "
-        "equipamentos (abrigos, gradis). Segue o filtro de ano."
+        "As marcações no chão dependem de boa visibilidade à noite; as placas "
+        "refletem a luz. O cadastro não diz se o sinal é marcação ou placa, "
+        "então usei o local de instalação: no leito da rua é marcação (faixas, "
+        "divisão de pista, setas pintadas, tachões); na calçada, no canteiro "
+        "ou acima da rua é placa ou equipamento (abrigos, gradis)."
     )
 
     noite = dados["periodo"].eq("NOITE")
@@ -704,13 +705,14 @@ def secao_horario(dados, raio):
         border=True,
     )
 
-    st.subheader("Mais sinais ao redor reduzem a gravidade de dia e de noite?")
+    st.subheader("Mais sinais por perto reduzem os acidentes graves, de dia e de noite?")
     st.caption(
-        "Proporção de acidentes graves por grupo de densidade, de dia e de "
-        "noite, para cada tipo de sinal. Se as marcações importassem mais à "
-        "noite, a queda seria maior nas barras da noite. Barras de erro: "
-        "intervalo de confiança de 95%. Grupos com menos de "
-        f"{relacao.MINIMO_REGISTROS} acidentes são omitidos."
+        "Cada barra mostra a porcentagem de acidentes graves, do grupo com "
+        "poucos sinais por perto ao grupo com muitos, de dia e de noite, para "
+        "cada tipo de sinal. Se as marcações importassem mais à noite, as "
+        "barras da noite cairiam mais. A linha em cada barra é a margem de "
+        f"erro (95%). Grupos com menos de {relacao.MINIMO_REGISTROS} acidentes "
+        "ficam de fora."
     )
     st.altair_chart(
         graficos.grafico_graves_horario(
@@ -721,10 +723,9 @@ def secao_horario(dados, raio):
 
     st.subheader("Marcações e placas separadas")
     st.caption(
-        "As marcações e as placas aparecem juntas (as contagens se "
-        "correlacionam bastante), o que dificulta separar o efeito de cada "
-        "uma. Aqui cada tipo é cortado na mediana (muitos ou poucos) e os "
-        "quatro cruzamentos são comparados, de dia e de noite."
+        "Marcações e placas costumam aparecer juntas, o que dificulta separar "
+        "o efeito de cada uma. Por isso cada tipo é dividido na mediana (muitos "
+        "ou poucos sinais) e comparamos as quatro combinações, de dia e de noite."
     )
     mostrar_grafico(
         graficos.grafico_marcacao_e_placa(graficos.dados_marcacao_e_placa(dados))
@@ -733,21 +734,20 @@ def secao_horario(dados, raio):
 
 @st.fragment
 def secao_antes_depois(raio):
-    st.subheader("Os acidentes mudam depois que o sinal entra?")
+    st.subheader("Os acidentes mudam depois que o sinal é instalado?")
     st.caption(
-        "Para cada sinal implantado, compara os acidentes num raio de "
-        f"{raio} m nos meses antes e depois da data de implantação. Entram só "
-        "locais sem outra implantação por perto dentro da janela. O controle "
-        "são locais de sinais antigos da mesma categoria, com datas sorteadas "
-        "entre as dos novos: ele mostra a tendência geral dos acidentes no "
-        "período. Esta análise usa todos os acidentes e não segue os filtros "
-        "de ano e de gravidade."
+        "Para cada sinal instalado, compara os acidentes num raio de "
+        f"{raio} m nos meses antes e depois da instalação. Entram só locais "
+        "sem outra instalação por perto nesse período. O controle são locais "
+        "com sinais antigos do mesmo tipo, com datas sorteadas entre as dos "
+        "sinais novos: ele mostra a tendência geral dos acidentes no período. "
+        "Usa todos os acidentes, sem os filtros de ano e de gravidade."
     )
 
     categorias = list(bases["sinalizacao"]["categoria"].value_counts().index)
     coluna_categoria, coluna_janela = st.columns(2)
     categoria = coluna_categoria.selectbox(
-        "Categoria do sinal", categorias, key="antes_depois_categoria"
+        "Tipo de sinal", categorias, key="antes_depois_categoria"
     )
     meses = coluna_janela.select_slider(
         "Janela antes e depois (meses)",
@@ -791,21 +791,21 @@ def secao_antes_depois(raio):
         faixa = f"{efeito['inferior']:.2f} a {efeito['superior']:.2f}".replace(".", ",")
         razao = f"{efeito['razao']:.2f}".replace(".", ",")
         if efeito["inferior"] <= 1 <= efeito["superior"]:
-            leitura = "o intervalo inclui 1: não há diferença distinguível do controle."
+            leitura = "a margem de erro inclui 1: não há diferença clara em relação ao controle."
         elif efeito["superior"] < 1:
             leitura = "os acidentes caíram mais (ou subiram menos) onde entrou o sinal."
         else:
             leitura = "os acidentes subiram mais onde entrou o sinal."
         st.markdown(
-            f"**Efeito relativo: {razao}** (intervalo de 95%: {faixa}); {leitura} "
-            "Os intervalos tendem a ser estreitos demais, porque o mesmo "
+            f"**Efeito relativo: {razao}** (margem de erro de 95%: {faixa}); {leitura} "
+            "As margens tendem a ser estreitas demais, porque o mesmo "
             "acidente pode contar em mais de um local próximo."
         )
 
     st.subheader("Gravidade antes e depois")
     st.caption(
-        "Proporção de acidentes graves nos mesmos locais, antes e depois. "
-        "Barras de erro: intervalo de confiança de 95%."
+        "Porcentagem de acidentes graves nos mesmos locais, antes e depois. "
+        "A linha em cada barra é a margem de erro (95%)."
     )
     mostrar_grafico(graficos.grafico_graves_antes_depois(resumo))
 
@@ -814,13 +814,13 @@ def secao_antes_depois(raio):
 def secao_vitimas(dados, raio):
     st.subheader("Vítimas e sinalização")
     st.caption(
-        "A tabela de vítimas não traz a gravidade de cada pessoa. Cada vítima "
-        "herda a do acidente: \"grave\" quer dizer que ela estava num acidente "
-        "com ferido grave ou morte. Com uma só vítima, isso é a gravidade da "
-        "própria pessoa; com várias, não se sabe qual delas foi a grave."
+        "A tabela de vítimas não diz se cada pessoa se feriu gravemente. Por "
+        "isso, cada vítima recebe a gravidade do acidente: \"grave\" quer dizer "
+        "que houve ferido grave ou morte. Se o acidente teve só uma vítima, "
+        "essa é a gravidade dela mesma."
     )
     so_uma_vitima = st.checkbox(
-        "Somente acidentes com uma vítima (gravidade exata da pessoa)",
+        "Só acidentes com uma vítima (gravidade exata da pessoa)",
         key="vitimas_uma",
     )
     if so_uma_vitima:
@@ -842,12 +842,13 @@ def secao_vitimas(dados, raio):
         border=True,
     )
 
-    st.subheader("Quem está mais exposto onde há menos sinais?")
+    st.subheader("Condutor, ocupante ou pedestre: quem se dá pior com poucos sinais?")
     st.caption(
-        "Proporção de vítimas em acidentes graves por grupo de densidade de "
-        "sinais, no total e por papel da vítima. Barras de erro: intervalo de "
-        f"confiança de 95%. Grupos com menos de {relacao.MINIMO_REGISTROS} "
-        "vítimas são omitidos."
+        "Cada barra mostra a porcentagem de vítimas que estavam em acidentes "
+        "graves, do grupo com poucos sinais por perto ao grupo com muitos. "
+        "Condutor é quem dirige e ocupante é o passageiro. A linha em cada "
+        "barra é a margem de erro (intervalo de confiança de 95%). Grupos com "
+        f"menos de {relacao.MINIMO_REGISTROS} vítimas ficam de fora."
     )
     dados_papel = graficos.dados_graves_por_densidade(
         dados,
@@ -870,7 +871,7 @@ def secao_vitimas(dados, raio):
         relacao.PARES_VITIMAS,
         "vítimas",
         "par_vitimas",
-        "O sinal certo perto muda a gravidade para pedestres e ciclistas?",
+        "Pedestres e ciclistas: ter o sinal certo por perto ajuda?",
     )
 
 
@@ -895,17 +896,17 @@ def texto_intervalo(efeito):
 
 
 def secao_resumo_categorias(dados, raio):
-    st.subheader("Quais tipos de sinalização se associam a menos acidentes graves?")
+    st.subheader("Quais tipos de sinal estão ligados a menos acidentes graves?")
     st.caption(
-        "Duas leituras para cada categoria. **Entre locais:** compara a "
-        f"proporção de acidentes graves com e sem a categoria em até {raio} m, "
-        "dentro de grupos com a mesma densidade de sinais, o mesmo tipo de "
-        "acidente e a mesma região, e junta as comparações (razão de "
-        "Mantel-Haenszel). **Antes e depois:** número de acidentes graves em "
-        f"volta de sinais implantados, {MESES_RESUMO} meses antes e depois, "
-        "contra locais de controle (usa todos os acidentes, sem os filtros). "
-        "Abaixo de 1 significa menos graves. É associação: sinais costumam ser "
-        "instalados onde já havia problema."
+        "Duas leituras para cada tipo de sinal. **Entre locais:** compara a "
+        "porcentagem de acidentes graves com e sem o tipo de sinal por perto "
+        f"(até {raio} m), sempre entre locais parecidos: com a mesma "
+        "quantidade de sinais, o mesmo tipo de acidente e a mesma região. "
+        "**Antes e depois:** conta os acidentes graves em volta de sinais "
+        f"novos, {MESES_RESUMO} meses antes e depois, e compara com locais de "
+        "controle (usa todos os acidentes, sem os filtros). Abaixo de 1 quer "
+        "dizer menos graves. É associação: sinais costumam ser instalados "
+        "onde já havia problema."
     )
 
     categorias = list(bases["sinalizacao"]["categoria"].value_counts().index)
@@ -929,9 +930,9 @@ def secao_resumo_categorias(dados, raio):
                 "Acidentes com a categoria por perto": int(linha["n_expostos"]),
                 "Graves com (%)": linha["pct_expostos"],
                 "Graves sem (%)": linha["pct_nao_expostos"],
-                "Razão bruta": linha["razao_bruta"],
-                "Razão ajustada": linha["razao"],
-                "IC 95% (ajustada)": texto_intervalo(linha),
+                "Razão sem controle": linha["razao_bruta"],
+                "Razão com controle": linha["razao"],
+                "Margem de erro (95%)": texto_intervalo(linha),
                 "Entre locais": leitura_razao(linha),
                 "Antes e depois (acidentes)": (
                     antes_depois_acidentes["razao"] if antes_depois_acidentes else None
@@ -961,9 +962,9 @@ def secao_resumo_categorias(dados, raio):
     menos = list(tabela.loc[tabela["Entre locais"] == "menos graves", "Categoria"])
     mais = list(tabela.loc[tabela["Entre locais"] == "mais graves", "Categoria"])
     st.markdown(
-        "**Entre locais, associadas a menos graves:** "
-        + (", ".join(menos) if menos else "nenhuma")
-        + ". **A mais graves:** "
+        "**Entre locais, tipos ligados a menos graves:** "
+        + (", ".join(menos) if menos else "nenhum")
+        + ". **Ligados a mais graves:** "
         + (", ".join(mais) if mais else "nenhuma")
         + "."
     )
@@ -976,8 +977,8 @@ def secao_resumo_categorias(dados, raio):
         column_config={
             "Graves com (%)": st.column_config.NumberColumn(format="%.1f"),
             "Graves sem (%)": st.column_config.NumberColumn(format="%.1f"),
-            "Razão bruta": st.column_config.NumberColumn(format="%.2f"),
-            "Razão ajustada": st.column_config.NumberColumn(format="%.2f"),
+            "Razão sem controle": st.column_config.NumberColumn(format="%.2f"),
+            "Razão com controle": st.column_config.NumberColumn(format="%.2f"),
             "Antes e depois (acidentes)": st.column_config.NumberColumn(format="%.2f"),
         },
         width="stretch",
@@ -985,7 +986,7 @@ def secao_resumo_categorias(dados, raio):
 
 
 def secao_ajustada(dados, raio):
-    st.subheader("Depois de controlar tudo, a densidade ainda importa?")
+    st.subheader("Comparando acidentes parecidos, o resultado continua?")
     razoes = relacao.razoes_por_densidade(dados)
     if razoes.empty:
         st.info("Poucos acidentes para formar os grupos de densidade.")
@@ -993,26 +994,27 @@ def secao_ajustada(dados, raio):
 
     referencia = razoes["referencia"].iloc[0]
     st.caption(
-        f"Cada grupo de densidade de sinais em até {raio} m é comparado ao de "
-        f"menos sinais ({referencia}). A razão ajustada compara só acidentes do "
-        "mesmo tipo, da mesma região, do mesmo período (dia ou noite) e do "
-        "mesmo ano, e junta as comparações. Se ela ficar perto da bruta, esses "
-        "fatores explicam pouco do padrão."
+        f"Cada grupo de sinais em até {raio} m é comparado ao grupo com menos "
+        f"sinais ({referencia}). A razão compara a proporção de graves: 1 "
+        "quer dizer igual e abaixo de 1, menos graves. \"Sem controle\" compara "
+        "tudo junto; \"com controle\" compara só acidentes do mesmo tipo, da "
+        "mesma região, do mesmo período (dia ou noite) e do mesmo ano. Se os "
+        "dois ficam parecidos, esses fatores explicam pouco do padrão."
     )
     ultimo = razoes.iloc[-1]
     colunas = st.columns(3)
     colunas[0].metric(
-        f"Grupo {ultimo['grupo']} × {referencia}: razão bruta",
+        f"Grupo {ultimo['grupo']} contra {referencia}: sem controle",
         f"{ultimo['razao_bruta']:.2f}".replace(".", ","),
         border=True,
     )
     colunas[1].metric(
-        "Razão ajustada",
+        "Com controle (ajustada)",
         f"{ultimo['razao']:.2f}".replace(".", ","),
         border=True,
     )
     colunas[2].metric(
-        "IC 95% (ajustada)",
+        "Margem de erro (95%)",
         texto_intervalo(ultimo),
         border=True,
     )
@@ -1021,14 +1023,13 @@ def secao_ajustada(dados, raio):
 
 @st.fragment
 def secao_pontos_criticos(dados, raio):
-    st.subheader("Pontos críticos para priorização")
+    st.subheader("Zonas mais críticas")
     st.caption(
-        "A cidade é dividida em áreas quadradas; cada linha é uma área com "
-        "acidentes graves. **Prioridade** = número de graves × (1 − posição da "
-        f"área entre as demais quanto à mediana de sinais em até {raio} m): "
-        "quanto mais graves e menos sinais, maior. O nome é a rua e a "
-        "transversal mais frequentes entre os acidentes graves da área. Segue "
-        "o filtro de ano."
+        "A cidade é dividida em áreas quadradas, e cada linha é uma área com "
+        "acidentes graves. **Prioridade**: quanto mais acidentes graves e "
+        f"menos sinais por perto (até {raio} m), maior. O nome da área é a "
+        "rua e a transversal mais comuns entre os acidentes graves dela. "
+        "Segue o filtro de ano."
     )
 
     c1, c2, c3, c4 = st.columns(4)
@@ -1114,11 +1115,12 @@ def secao_pontos_criticos(dados, raio):
 
 @st.fragment
 def secao_combinacoes(dados, raio):
-    st.subheader("Combinações de sinalização")
+    st.subheader("Quais combinações de sinais são mais comuns?")
     siglas = "; ".join(f"{sigla} = {nome}" for nome, sigla in relacao.SIGLAS.items())
     st.caption(
-        "Cada acidente tem uma combinação: o conjunto de categorias de sinal "
-        f"presentes em até {raio} m. Siglas: {siglas}. Segue o filtro de ano."
+        "Cada acidente tem uma combinação: o conjunto de tipos de sinal que "
+        f"existem por perto (até {raio} m). Siglas: {siglas}. Segue o filtro "
+        "de ano."
     )
 
     quantidade = st.select_slider(
@@ -1133,19 +1135,19 @@ def secao_combinacoes(dados, raio):
         return
 
     st.markdown(
-        f"**As {len(tabela)} combinações mais frequentes cobrem "
+        f"**As {len(tabela)} combinações mais comuns cobrem "
         f"{cobertura:.0%} dos acidentes**; ao todo são {total} combinações com "
-        f"pelo menos {relacao.MINIMO_REGISTROS} acidentes. Barras ordenadas pelo "
-        "número de acidentes; a cor e o número ao lado mostram a % de graves."
+        f"pelo menos {relacao.MINIMO_REGISTROS} acidentes. As barras seguem a "
+        "quantidade de acidentes; a cor e o número ao lado mostram a % de graves."
     )
     mostrar_grafico(graficos.grafico_combinacoes(tabela))
 
-    st.subheader("Quantas categorias distintas de sinal há por perto?")
+    st.subheader("Mais tipos diferentes de sinal por perto, menos graves?")
     st.caption(
-        "Proporção de acidentes graves conforme o número de categorias "
-        "diferentes presentes no raio (de 0 a 9). Barras de erro: intervalo de "
-        f"confiança de 95%. Grupos com menos de {relacao.MINIMO_REGISTROS} "
-        "acidentes são omitidos."
+        "Cada barra é a porcentagem de acidentes graves conforme quantos tipos "
+        "diferentes de sinal existem por perto (de 0 a 9). A linha em cada "
+        f"barra é a margem de erro (95%). Grupos com menos de "
+        f"{relacao.MINIMO_REGISTROS} acidentes ficam de fora."
     )
     mostrar_grafico(
         graficos.grafico_graves_por_n_categorias(
@@ -1155,11 +1157,11 @@ def secao_combinacoes(dados, raio):
 
 
 PERGUNTAS = {
-    1: "Quais conjuntos/tipos de sinalização gráfica estão associados a uma menor proporção de acidentes graves em Porto Alegre?",
-    2: "Quais são as zonas de acidentes graves em Porto Alegre e a quanto tempo/distância eles estão do elemento de sinalização mais próximo?",
-    3: "Existe correlação entre a densidade de sinalização e a severidade dos acidentes em um determinado raio?",
-    4: "Quais faixas horárias e dias da semana concentram o maior número de acidentes com vítimas?",
-    5: "Como se distribuem as vítimas, por papel (condutor, ocupante, pedestre) e perfil, entre acidentes graves e não graves, conforme a densidade e a presença de sinalização por perto?",
+    1: "Quais tipos de sinal estão ligados a menos acidentes graves?",
+    2: "Onde ficam as zonas de acidentes graves e a que distância está o sinal mais próximo de cada uma?",
+    3: "A quantidade de sinais por perto reduz a severidade dos acidentes?",
+    4: "Em quais dias e horários acontecem mais acidentes com vítimas?",
+    5: "Onde há menos sinais por perto, as vítimas são mais graves? Muda se a pessoa for motorista, passageiro ou pedestre?",
 }
 
 # Widgets das subabas. Uma subaba fechada não desenha seus widgets, e o
@@ -1168,7 +1170,7 @@ CHAVES_SUBABAS = [
     "regiao_tipo", "par_acidentes", "combinacoes_quantidade",
     "criticos_tamanho", "criticos_ordem", "criticos_minimo",
     "criticos_quantidade", "antes_depois_categoria", "antes_depois_meses",
-    "vitimas_uma", "par_vitimas",
+    "vitimas_uma", "par_vitimas", "heatmap_tipo", "heatmap_vitimas",
 ]
 
 
@@ -1180,14 +1182,14 @@ def cabecalho_pergunta(numero, onde):
 
 
 def secao_densidade(dados, raio):
-    st.subheader("Mais sinais ao redor, menos acidentes graves?")
+    st.subheader("A porcentagem de graves cai quando há mais sinais?")
     st.caption(
-        "Proporção de acidentes graves por grupo de densidade de sinais, "
-        "no total e por tipo de acidente. O tipo pesa muito na "
-        "gravidade (atropelamentos são bem mais graves), por isso a "
-        "separação. É uma associação: áreas centrais têm mais sinais e "
-        "menor velocidade, e a sinalização costuma ser instalada onde "
-        "já houve problema."
+        "Cada barra mostra a porcentagem de acidentes graves, do grupo com "
+        "poucos sinais por perto ao grupo com muitos, no total e por tipo de "
+        "acidente. Separamos por tipo porque ele pesa muito: atropelamentos "
+        "são bem mais graves. Isso mostra uma associação, não prova que o "
+        "sinal causa a queda: áreas centrais têm mais sinais e velocidade "
+        "menor, e a sinalização costuma ser instalada onde já houve problema."
     )
     dados_densidade = graficos.dados_graves_por_densidade(dados)
     if dados_densidade.empty:
@@ -1207,9 +1209,9 @@ def secao_mapa_graves(dados, raio, anos):
         st.info("Nenhum acidente grave para os anos selecionados.")
         return
     st.caption(
-        "Cada ponto é um acidente grave, colorido pela quantidade "
-        f"de sinais em até {raio} m. Passe o mouse para "
-        "ver os detalhes."
+        "Cada ponto é um acidente grave. A cor mostra quantos sinais há por "
+        f"perto (até {raio} m). Passe o mouse sobre um ponto para ver os "
+        "detalhes."
     )
     st_folium(
         montar_mapa_graves(
@@ -1226,12 +1228,14 @@ def secao_mapa_graves(dados, raio, anos):
 
 
 def secao_distancia(dados):
-    st.subheader("Distância ao sinal mais próximo")
+    st.subheader("A que distância fica o sinal mais próximo?")
     st.caption(
-        "A escala do primeiro gráfico é de raiz quadrada, para as faixas "
-        "mais distantes (poucos acidentes) continuarem visíveis. Esta "
-        "análise não depende do raio. No segundo gráfico, faixas com "
-        f"menos de {relacao.MINIMO_REGISTROS} acidentes são omitidas."
+        "O primeiro gráfico mostra quantos acidentes há em cada faixa de "
+        "distância ao sinal mais próximo. A escala é de raiz quadrada, para as "
+        "faixas mais distantes (poucos acidentes) continuarem visíveis. O "
+        "segundo mostra a porcentagem de graves em cada faixa; faixas com "
+        f"menos de {relacao.MINIMO_REGISTROS} acidentes ficam de fora. Esta "
+        "análise não depende do raio."
     )
     contagem, graves = graficos.dados_distancia(dados)
     esquerda, direita = st.columns(2)
@@ -1260,9 +1264,9 @@ def abas_perguntas(dados, raio, anos):
         if aba1.open:
             cabecalho_pergunta(
                 1,
-                "Respondida por: comparação por categoria de sinal, combinações "
-                "de sinalização, sinal certo perto do acidente e antes e depois "
-                "da implantação.",
+                "Respondida por: a comparação por tipo de sinal, as combinações "
+                "de sinais, o sinal certo por perto e o antes e depois da "
+                "instalação.",
             )
             secao_resumo_categorias(dados, raio)
             st.divider()
@@ -1276,8 +1280,8 @@ def abas_perguntas(dados, raio, anos):
         if aba2.open:
             cabecalho_pergunta(
                 2,
-                "Respondida por: mapa dos acidentes graves, ranking de pontos "
-                "críticos e distância ao sinal mais próximo.",
+                "Respondida por: o mapa dos acidentes graves, o ranking das zonas "
+                "mais críticas e a distância ao sinal mais próximo.",
             )
             secao_mapa_graves(dados, raio, anos)
             st.divider()
@@ -1289,8 +1293,8 @@ def abas_perguntas(dados, raio, anos):
         if aba3.open:
             cabecalho_pergunta(
                 3,
-                "Respondida por: densidade de sinais por tipo de acidente, por "
-                "região e com controle de tipo, região, horário e ano.",
+                "Respondida por: a porcentagem de graves por quantidade de sinais, "
+                "a checagem por região e a comparação entre acidentes parecidos.",
             )
             secao_densidade(dados, raio)
             st.divider()
@@ -1302,22 +1306,19 @@ def abas_perguntas(dados, raio, anos):
         if aba4.open:
             cabecalho_pergunta(
                 4,
-                "Respondida pelo mapa de calor de dia da semana e horário (aba "
-                "Visão geral) e pela comparação entre dia e noite abaixo.",
+                "Respondida pelo mapa de calor abaixo. A parte de dia, noite e "
+                "sinalização é um complemento.",
             )
-            st.info(
-                "O mapa de calor por dia da semana e horário, com filtros de "
-                "tipo de acidente e de acidentes com vítimas, está na aba "
-                "**Visão geral**."
-            )
+            mostrar_heatmap_dia_hora(dados)
+            st.divider()
             secao_horario(dados, raio)
 
     with aba5:
         if aba5.open:
             cabecalho_pergunta(
                 5,
-                "Respondida por: vítimas por papel e densidade de sinais, e "
-                "pares de vítima e sinal (pedestre e travessia, ciclista e "
+                "Mostrado aqui: vítimas por papel e quantidade de sinais, e dois "
+                "casos específicos (pedestre com travessia, ciclista com "
                 "sinalização de bicicletas).",
             )
             secao_vitimas(relacao.ligar_vitimas(bases["vitimas"], dados), raio)
