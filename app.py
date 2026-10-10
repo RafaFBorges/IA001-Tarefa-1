@@ -1085,7 +1085,8 @@ def secao_pontos_criticos(dados, raio):
     })
     tabela.index = pd.RangeIndex(1, len(tabela) + 1, name="Posição")
 
-    st.dataframe(
+    st.caption("Clique em qualquer célula de uma linha para destacá-la em azul no mapa.")
+    escolha = st.dataframe(
         tabela,
         column_config={
             "Graves (%)": st.column_config.NumberColumn(format="%.1f"),
@@ -1096,15 +1097,25 @@ def secao_pontos_criticos(dados, raio):
             "Prioridade": st.column_config.NumberColumn(format="%.1f"),
         },
         width="stretch",
+        on_select="rerun",
+        selection_mode="single-cell",
+        key="criticos_tabela",
     )
+    celulas = escolha.selection.cells
+    selecionado = celulas[0][0] + 1 if celulas else None
     st.download_button(
         "Baixar ranking (CSV)",
         tabela.to_csv(sep=";", decimal=",").encode("utf-8-sig"),
         file_name="pontos_criticos.csv",
         mime="text/csv",
     )
+    mapa_base, camada = mapas.mapa_pontos_criticos(ranking, raio, selecionado)
+    centro, zoom = mapas.enquadrar(ranking)
     st_folium(
-        mapas.mapa_pontos_criticos(ranking, raio),
+        mapa_base,
+        feature_group_to_add=camada,
+        center=centro,
+        zoom=zoom,
         width=None,
         height=450,
         key="mapa_pontos_criticos",

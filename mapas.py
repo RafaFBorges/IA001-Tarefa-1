@@ -588,6 +588,21 @@ def pontos_em_porto_alegre(df):
     ]
 
 
+def _fixar_ids(mapa, prefixo):
+    """Troca os identificadores aleatórios do folium por números em sequência.
+    Assim, o mesmo conteúdo gera sempre o mesmo código e o st_folium não
+    recria o mapa (o que faz a tela piscar) quando só a camada de pontos muda."""
+    contador = [0]
+
+    def percorrer(elemento):
+        elemento._id = f"{prefixo}{contador[0]}"
+        contador[0] += 1
+        for filho in getattr(elemento, "_children", {}).values():
+            percorrer(filho)
+
+    percorrer(mapa)
+
+
 def _base_mapa():
     mapa = folium.Map(
         location=CENTRO_MAPA,
@@ -800,21 +815,31 @@ def mapa_graves_sinalizacao(graves, grupos, raio):
     return mapa
 
 
-def mapa_pontos_criticos(pontos, raio):
-    """Os pontos críticos do ranking, numerados pela posição. O tamanho do
-    círculo segue o número de acidentes graves."""
-    mapa = _base_mapa()
-    camada = folium.FeatureGroup(name="Pontos críticos").add_to(mapa)
+COR_SELECIONADO = "#1f77b4"
 
-    for posicao, ponto in enumerate(pontos.itertuples(), start=1):
+
+def mapa_pontos_criticos(pontos, raio, selecionado=None):
+    """Os pontos críticos do ranking, numerados pela posição. O tamanho do
+    círculo segue o número de acidentes graves. O ponto `selecionado` (posição
+    a partir de 1) fica azul e é desenhado por último, por cima dos demais.
+
+    Devolve o mapa base (fundo e enquadramento) e a camada com os pontos. A
+    camada vai separada para o st_folium trocá-la sem recriar o mapa."""
+    mapa = _base_mapa()
+    camada = folium.FeatureGroup(name="Pontos críticos")
+
+    lista = list(enumerate(pontos.itertuples(), start=1))
+    lista.sort(key=lambda item: item[0] == selecionado)
+    for posicao, ponto in lista:
+        destaque = posicao == selecionado
         folium.CircleMarker(
             location=[ponto.latitude, ponto.longitude],
             radius=7 + 2 * ponto.graves ** 0.5,
-            color="#7f0000",
-            weight=1.5,
+            color="#0b3d66" if destaque else "#7f0000",
+            weight=3 if destaque else 1.5,
             fill=True,
-            fill_color=COR_GRAVE,
-            fill_opacity=0.6,
+            fill_color=COR_SELECIONADO if destaque else COR_GRAVE,
+            fill_opacity=0.9 if destaque else 0.6,
             tooltip=(
                 f"<b>#{posicao} {html.escape(ponto.local)}</b><br>"
                 f"{int(ponto.graves)} graves em {int(ponto.acidentes)} acidentes<br>"
@@ -832,15 +857,35 @@ def mapa_pontos_criticos(pontos, raio):
             ),
         ).add_to(camada)
 
-    if len(pontos):
-        mapa.fit_bounds(
-            [
-                [pontos["latitude"].min(), pontos["longitude"].min()],
-                [pontos["latitude"].max(), pontos["longitude"].max()],
-            ],
-            padding=(30, 30),
-        )
-    return mapa
+    _fixar_ids(mapa, "criticos")
+    return mapa, camada
+
+
+def enquadrar(pontos, largura_px=1000, altura_px=450, margem_px=50):
+    """Centro e zoom (inteiro) em que todos os pontos cabem no mapa. É
+    calculado aqui, e não com fit_bounds, porque o st_folium não aplica o
+    fit_bounds do mapa base quando a camada de pontos vai separada."""
+    if pontos.empty:
+        return CENTRO_MAPA, ZOOM_MAPA
+
+    def projetar(latitude, longitude):
+        x = (longitude + 180) / 360
+        seno = math.sin(math.radians(latitude))
+        y = 0.5 - math.log((1 + seno) / (1 - seno)) / (4 * math.pi)
+        return x, y
+
+    x0, y1 = projetar(pontos["latitude"].min(), pontos["longitude"].min())
+    x1, y0 = projetar(pontos["latitude"].max(), pontos["longitude"].max())
+    largura = max(x1 - x0, 1e-9)
+    altura = max(y1 - y0, 1e-9)
+    zoom = min(
+        math.log2((largura_px - 2 * margem_px) / (256 * largura)),
+        math.log2((altura_px - 2 * margem_px) / (256 * altura)),
+    )
+    xc, yc = (x0 + x1) / 2, (y0 + y1) / 2
+    longitude = xc * 360 - 180
+    latitude = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * yc))))
+    return [float(latitude), float(longitude)], int(max(3, min(17, math.floor(zoom))))
 
 
 # Referência de escala para o raio da sinalização: o Mercado Público Central
